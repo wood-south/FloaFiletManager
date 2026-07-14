@@ -1,0 +1,14 @@
+#依赖文件
+node_modules/
+#日志文件
+*.log
+#编译输出
+dist-new/
+#用户数据
+.userdata/
+#本地配置文件
+*.local
+#上传的文件
+uploads/
+#缓存文件
+icon-cache.json

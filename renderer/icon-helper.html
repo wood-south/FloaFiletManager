@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Icon Helper</title>
+</head>
+<body>
+  <script>
+    window.electronAPI.onGetFileIcon((requestId, filePath, isDirectory) => {
+      window.electronAPI.getFileIconNative(filePath, isDirectory)
+        .then(dataUrl => {
+          window.electronAPI.returnFileIcon(requestId, dataUrl);
+        })
+        .catch(() => {
+          window.electronAPI.returnFileIcon(requestId, null);
+        });
+    });
+  </script>
+</body>
+</html>

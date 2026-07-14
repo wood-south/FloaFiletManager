@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>浮窗</title>
+  <link rel="stylesheet" href="styles/float.css">
+</head>
+<body>
+  <div class="pet-body" id="petBody">
+    <div class="pet-avatar">
+      <div class="pet-avatar-spin">
+        <svg class="pet-svg" viewBox="0 0 100 100">
+        <ellipse class="pet-shadow" cx="50" cy="90" rx="25" ry="5" fill="rgba(0,0,0,0.15)"/>
+        <g class="pet-head">
+          <path d="M25 45 Q25 20 50 20 Q75 20 75 45 L75 65 Q75 80 50 80 Q25 80 25 65 Z" fill="#f5a623"/>
+          <path d="M28 38 Q28 25 50 25 Q72 25 72 38" fill="none" stroke="#e8941a" stroke-width="2"/>
+          <polygon class="ear ear-left" points="30,28 25,10 40,22" fill="#f5a623"/>
+          <polygon class="ear-inner ear-left-inner" points="31,26 29,15 37,23" fill="#f8c774"/>
+          <polygon class="ear ear-right" points="70,28 75,10 60,22" fill="#f5a623"/>
+          <polygon class="ear-inner ear-right-inner" points="69,26 71,15 63,23" fill="#f8c774"/>
+          <g class="eyes">
+            <ellipse class="eye eye-left" cx="38" cy="48" rx="6" ry="7" fill="white"/>
+            <ellipse class="pupil pupil-left" cx="38" cy="49" rx="3" ry="4" fill="#333"/>
+            <circle class="eye-shine" cx="39.5" cy="47.5" r="1.2" fill="white"/>
+            <ellipse class="eye eye-right" cx="62" cy="48" rx="6" ry="7" fill="white"/>
+            <ellipse class="pupil pupil-right" cx="62" cy="49" rx="3" ry="4" fill="#333"/>
+            <circle class="eye-shine" cx="63.5" cy="47.5" r="1.2" fill="white"/>
+          </g>
+          <ellipse class="nose" cx="50" cy="58" rx="4" ry="3" fill="#e85d5d"/>
+          <path class="mouth" d="M50 61 Q45 66 42 63 M50 61 Q55 66 58 63" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round"/>
+          <ellipse class="cheek cheek-left" cx="32" cy="60" rx="5" ry="3" fill="#ffb6b6" opacity="0.6"/>
+          <ellipse class="cheek cheek-right" cx="68" cy="60" rx="5" ry="3" fill="#ffb6b6" opacity="0.6"/>
+          <path class="whisker" d="M25 55 L15 53 M25 60 L15 60 M25 65 L15 67 M75 55 L85 53 M75 60 L85 60 M75 65 L85 67" fill="none" stroke="#d4903a" stroke-width="1" stroke-linecap="round"/>
+        </g>
+        <g class="paw paw-left">
+          <ellipse cx="35" cy="78" rx="6" ry="4" fill="#f5a623"/>
+        </g>
+        <g class="paw paw-right">
+          <ellipse cx="65" cy="78" rx="6" ry="4" fill="#f5a623"/>
+        </g>
+      </svg>
+      </div>
+    </div>
+
+    <div class="menu-ring" id="menuRing">
+      <div class="menu-btn" data-action="search" title="查找文件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+      </div>
+      <div class="menu-btn" data-action="folder" title="文件管理">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </div>
+      <div class="menu-btn" data-action="settings" title="设置路径">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </div>
+      <div class="menu-btn" data-action="pin" title="切换置顶" id="pinBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 17v5"></path>
+          <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path>
+        </svg>
+      </div>
+    </div>
+
+    <div class="quit-ring" id="quitRing">
+      <div class="menu-btn quit-btn" data-action="quit" title="退出">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="drop-overlay" id="dropOverlay">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="17 8 12 3 7 8"></polyline>
+      <line x1="12" y1="3" x2="12" y2="15"></line>
+    </svg>
+    <span>释放上传</span>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="scripts/float.js"></script>
+</body>
+</html>

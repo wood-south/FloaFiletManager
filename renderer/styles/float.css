@@ -1,0 +1,280 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+  -webkit-app-region: no-drag;
+}
+
+.float-ball {
+  display: none;
+}
+
+/* ======== 桌宠主容器（定位 + 拖拽） ======== */
+.pet-body {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90px;
+  height: 90px;
+  overflow: visible;
+  cursor: grab;
+  z-index: 10;
+  transform-origin: center center;
+  transition: left 0.35s ease, right 0.35s ease, top 0.35s ease, bottom 0.35s ease, transform 0.2s ease;
+}
+
+.pet-body:hover {
+  transform: translate(-50%, -52%) scale(1.05);
+}
+
+.pet-body.dragging {
+  cursor: grabbing;
+  transform: translate(-50%, -50%) scale(0.95);
+}
+
+/* 贴边定位：只改位置 */
+.pet-body.snap-left  { left: auto; right: 25px; top: 50%;  transform: translate(0, -50%); }
+.pet-body.snap-right { left: 25px;  right: auto; top: 50%;  transform: translate(0, -50%); }
+.pet-body.snap-top   { top: auto;  bottom: 25px; left: 50%; transform: translate(-50%, 0); }
+.pet-body.snap-bottom{ top: 25px;  bottom: auto; left: 50%; transform: translate(-50%, 0); }
+
+.pet-body.snap-left:hover   { transform: translate(0, -52%) scale(1.05); }
+.pet-body.snap-right:hover  { transform: translate(0, -52%) scale(1.05); }
+.pet-body.snap-top:hover    { transform: translate(-50%, 0) scale(1.05); }
+.pet-body.snap-bottom:hover { transform: translate(-50%, 0) scale(1.05); }
+
+.pet-body.snap-left.dragging   { transform: translate(0, -50%) scale(0.95); }
+.pet-body.snap-right.dragging  { transform: translate(0, -50%) scale(0.95); }
+.pet-body.snap-top.dragging    { transform: translate(-50%, 0) scale(0.95); }
+.pet-body.snap-bottom.dragging { transform: translate(-50%, 0) scale(0.95); }
+
+/* 贴边旋转在 pet-avatar，呼吸在 pet-avatar-spin 避免冲突 */
+.pet-avatar {
+  width: 90px;
+  height: 90px;
+  overflow: visible;
+  transform-origin: center center;
+  transition: transform 0.35s ease;
+}
+
+.pet-avatar-spin {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  animation: pet-breathe 3s ease-in-out infinite;
+}
+
+.pet-body.snap-left .pet-avatar  { transform: rotate(90deg); }
+.pet-body.snap-right .pet-avatar { transform: rotate(-90deg); }
+.pet-body.snap-top .pet-avatar   { transform: rotate(180deg); }
+.pet-body.snap-bottom .pet-avatar{ transform: rotate(0deg); }
+
+/* 菜单：关闭时完全消失，展开时出现 */
+.menu-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  z-index: 5;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.quit-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  z-index: 6;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.menu-ring.open,
+.quit-ring.open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* 贴边时菜单往外移动避免遮挡 */
+.pet-body.snap-left .menu-ring,
+.pet-body.snap-left .quit-ring  { right: 45px; left: auto; }
+.pet-body.snap-right .menu-ring,
+.pet-body.snap-right .quit-ring { left: 45px; right: auto; }
+.pet-body.snap-top .menu-ring,
+.pet-body.snap-top .quit-ring   { bottom: 45px; top: auto; }
+.pet-body.snap-bottom .menu-ring,
+.pet-body.snap-bottom .quit-ring{ top: 45px; bottom: auto; }
+
+.pet-svg {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+@keyframes pet-breathe {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.03); }
+}
+
+.pet-shadow {
+  animation: shadow-pulse 3s ease-in-out infinite;
+}
+
+@keyframes shadow-pulse {
+  0%, 100% { transform: scaleX(1); opacity: 0.15; }
+  50% { transform: scaleX(0.95); opacity: 0.12; }
+}
+
+.eyes {
+  animation: blink 4s ease-in-out infinite;
+  transform-origin: center 48px;
+}
+
+@keyframes blink {
+  0%, 45%, 55%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.1); }
+}
+
+.ear {
+  transform-origin: center 25px;
+  transition: transform 0.3s ease;
+}
+
+.pet-body:hover .ear-left  { transform: rotate(-8deg); }
+.pet-body:hover .ear-right { transform: rotate(8deg); }
+
+.pupil {
+  animation: pupil-move 5s ease-in-out infinite;
+}
+
+@keyframes pupil-move {
+  0%, 40%, 60%, 100% { transform: translateX(0); }
+  50% { transform: translateX(1.5px); }
+}
+
+.paw {
+  transition: transform 0.3s ease;
+}
+
+.pet-body:hover .paw-left  { transform: translateY(-2px); }
+.pet-body:hover .paw-right { transform: translateY(-2px); }
+
+/* ======== 菜单按钮样式 ======== */
+
+.menu-btn {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.3);
+  transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.menu-btn svg {
+  width: 15px;
+  height: 15px;
+  color: #667eea;
+  transition: color 0.15s;
+}
+
+.menu-btn:hover {
+  background: #667eea;
+  transform: translate(-50%, -50%) scale(1.2) !important;
+}
+
+.menu-btn:hover svg {
+  color: white;
+}
+
+.menu-ring.open .menu-btn:nth-child(1) { opacity:1; transform: translate(-50%,-50%) scale(1); top:-48px; left:0;   transition-delay:0s; }
+.menu-ring.open .menu-btn:nth-child(2) { opacity:1; transform: translate(-50%,-50%) scale(1); top:0;    left:48px; transition-delay:0.05s; }
+.menu-ring.open .menu-btn:nth-child(3) { opacity:1; transform: translate(-50%,-50%) scale(1); top:48px; left:0;    transition-delay:0.1s; }
+.menu-ring.open .menu-btn:nth-child(4) { opacity:1; transform: translate(-50%,-50%) scale(1); top:0;    left:-48px;transition-delay:0.15s; }
+
+.menu-btn.active { background: #667eea; }
+.menu-btn.active svg { color: white; }
+
+.quit-btn { background: rgba(230, 70, 70, 0.95); }
+.quit-btn svg { color: white; }
+.quit-btn:hover { background: #e64646; }
+
+.quit-ring.open .quit-btn {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  top: -48px;
+  left: 0;
+  transition-delay: 0s;
+}
+
+/* ======== 拖放 ======== */
+.drop-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: rgba(102, 126, 234, 0.8);
+  border: 3px dashed rgba(255, 255, 255, 0.8);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 10px;
+  gap: 4px;
+  z-index: 20;
+  animation: pulse 1s infinite;
+}
+
+.drop-overlay.drag-over { display: flex; }
+.drop-overlay svg { width: 24px; height: 24px; }
+
+@keyframes pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.08); }
+}
+
+/* ======== Toast ======== */
+.toast {
+  position: fixed;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: all 0.3s ease;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.toast.show {
+  top: 10px;
+  opacity: 1;
+}
