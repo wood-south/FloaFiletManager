@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-
-
 <h1 align="center">浮窗文件管理器</h1>
 <p align="center">Floating File Manager — 基于 Electron 的 Windows 桌面浮窗文件管理工具</p>
 
