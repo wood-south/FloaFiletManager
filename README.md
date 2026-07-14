@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 
 <h1 align="center">浮窗文件管理器</h1>
@@ -117,3 +118,6 @@ npm run build
 ## 许可证
 
 [MIT](LICENSE)
+=======
+# FloaFiletManager
+>>>>>>> e2d7a21e178c096312f5b6380149f8df4967b41d
