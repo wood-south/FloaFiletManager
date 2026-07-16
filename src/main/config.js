@@ -35,6 +35,7 @@ function loadConfig() {
   const defaultSavePath = path.join(app.getPath('documents'), 'FloatUploads');
   return {
     savePath: defaultSavePath,
+    preferredPath: defaultSavePath,
     floatPosition: { x: 100, y: 100 },
     partitions: [
       {
@@ -106,6 +107,11 @@ function migrateConfig(config) {
       changed = true;
     }
   });
+
+  if (!config.preferredPath) {
+    config.preferredPath = config.savePath || path.join(app.getPath('documents'), 'FloatUploads');
+    changed = true;
+  }
 
   if (changed) {
     saveConfig(config);

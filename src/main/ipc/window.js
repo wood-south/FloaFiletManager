@@ -37,7 +37,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const bounds = floatWindow.getBounds();
     const { workArea } = screen.getPrimaryDisplay();
 
-    const edgeThreshold = 60;
+    const edgeThreshold = 20;
     const visibleSize = 100;
     const hideOffset = bounds.width - visibleSize;
     const hideOffsetY = bounds.height - visibleSize;

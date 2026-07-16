@@ -117,7 +117,7 @@ function createFileManagerWindow() {
 function createIconHelperWindow() {
   if (iconHelperWindow) return;
   iconHelperWindow = new BrowserWindow({
-    show: true,
+    show: false,
     width: 100,
     height: 100,
     frame: false,
@@ -135,7 +135,6 @@ function createIconHelperWindow() {
       offscreen: false
     }
   });
-  iconHelperWindow.hide();
   iconHelperWindow.loadFile(path.join(rootDir, 'renderer', 'icon-helper.html'));
   iconHelperWindow.webContents.on('did-finish-load', () => {
     iconHelperReady = true;

@@ -878,6 +878,20 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+}
+
+.sidebar-item .star-icon {
+  width: 12px;
+  height: 12px;
+  color: #f59e0b;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.sidebar-item.preferred {
+  color: #d97706;
+  font-weight: 500;
 }
 
 .partition-group {
@@ -895,6 +909,15 @@ html, body {
 
 .partition-header:hover .partition-add-btn {
   opacity: 1;
+}
+
+.partition-header.drag-over {
+  background: #eef2ff;
+  border-radius: 6px;
+}
+
+.sidebar-item.dragging {
+  opacity: 0.4;
 }
 
 .partition-title {

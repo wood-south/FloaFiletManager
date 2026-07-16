@@ -67,25 +67,6 @@ function showToast(message, duration = 2000) {
   }, duration);
 }
 
-function debounceSnap(action) {
-  if (snapLock) return;
-  snapLock = true;
-  clearTimeout(snapTimer);
-  snapTimer = setTimeout(() => {
-    snapLock = false;
-    if (action) action();
-  }, 350);
-}
-
-async function doUnsnap() {
-  const snapEdge = await window.electronAPI.unsnapWindow();
-  wasSnapped = !!snapEdge;
-}
-
-function doResnap() {
-  window.electronAPI.resnapWindow();
-}
-
 function toggleMenu() {
   if (menuOpen) {
     closeMenu();
@@ -94,17 +75,12 @@ function toggleMenu() {
   closeQuit();
   menuOpen = true;
   menuRing.classList.add('open');
-  debounceSnap(() => doUnsnap());
 }
 
 function closeMenu() {
   if (!menuOpen) return;
   menuOpen = false;
   menuRing.classList.remove('open');
-  if (wasSnapped) {
-    wasSnapped = false;
-    debounceSnap(() => doResnap());
-  }
 }
 
 function toggleQuit() {
@@ -115,18 +91,46 @@ function toggleQuit() {
   closeMenu();
   quitOpen = true;
   quitRing.classList.add('open');
-  debounceSnap(() => doUnsnap());
 }
 
 function closeQuit() {
   if (!quitOpen) return;
   quitOpen = false;
   quitRing.classList.remove('open');
-  if (wasSnapped) {
-    wasSnapped = false;
-    debounceSnap(() => doResnap());
-  }
 }
+
+// 检查是否处于贴边状态
+function hasSnapClass() {
+  return petBody.classList.contains('snap-left') ||
+         petBody.classList.contains('snap-right') ||
+         petBody.classList.contains('snap-top') ||
+         petBody.classList.contains('snap-bottom');
+}
+
+// 贴边时鼠标悬停 → 弹出显示；离开 → 收回贴边
+petBody.addEventListener('mouseenter', () => {
+  if (isDragging || snapLock) return;
+  if (hasSnapClass()) {
+    wasSnapped = true;
+    hasMoved = false;
+    snapLock = true;
+    window.electronAPI.unsnapWindow().then(() => {
+      setTimeout(() => { snapLock = false; }, 200);
+    });
+  }
+});
+
+petBody.addEventListener('mouseleave', () => {
+  if (snapLock) return;
+  // 菜单/退出按钮打开时不收回，避免操作中断
+  if (wasSnapped && !isDragging && !hasMoved && !menuOpen && !quitOpen) {
+    snapLock = true;
+    window.electronAPI.resnapWindow().then(() => {
+      setTimeout(() => { snapLock = false; }, 200);
+    });
+  }
+  wasSnapped = false;
+});
 
 // 拖动逻辑
 petBody.addEventListener('mousedown', (e) => {
@@ -157,6 +161,7 @@ document.addEventListener('mouseup', (e) => {
 
   // 拖动结束后单次保存位置
   if (hasMoved) {
+    wasSnapped = false; // 拖动过，离开时不弹回贴边
     window.electronAPI.saveWindowPosition();
   }
 
@@ -348,12 +353,18 @@ document.addEventListener('drop', async (e) => {
     }
   } else {
     // 普通模式：上传文件
+    // 文件管理器打开则上传到当前路径，否则上传到首选路径
+    let destDir = null;
+    if (window.electronAPI.getUploadDest) {
+      destDir = await window.electronAPI.getUploadDest();
+    }
     let successCount = 0;
     for (const filePath of filePaths) {
       const fileName = filePath.split(/[\\/]/).pop();
       const result = await window.electronAPI.uploadFile({
         sourcePath: filePath,
-        fileName: fileName
+        fileName: fileName,
+        destDir: destDir
       });
 
       if (result.duplicate) {
@@ -371,7 +382,8 @@ document.addEventListener('drop', async (e) => {
           const overwriteResult = await window.electronAPI.uploadFile({
             sourcePath: filePath,
             fileName: fileName,
-            overwrite: true
+            overwrite: true,
+            destDir: destDir
           });
           if (overwriteResult.success) successCount++;
         }

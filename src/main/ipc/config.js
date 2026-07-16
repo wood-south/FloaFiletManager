@@ -151,6 +151,31 @@ function register({ loadConfig, saveConfig }) {
     }
   });
 
+  ipcMain.handle('move-path-to-partition', (event, { fromPartitionId, pathIndex, toPartitionId }) => {
+    try {
+      if (!fromPartitionId || !toPartitionId) return { success: false, error: '分区ID不能为空' };
+      const config = loadConfig();
+      const fromPart = (config.partitions || []).find(p => p.id === fromPartitionId);
+      const toPart = (config.partitions || []).find(p => p.id === toPartitionId);
+      if (!fromPart || !toPart) return { success: false, error: '分区不存在' };
+      if (!fromPart.paths || !fromPart.paths[pathIndex]) {
+        return { success: false, error: '路径索引无效' };
+      }
+      const movedItem = fromPart.paths[pathIndex];
+      // 检查目标分区是否已有相同路径
+      if (toPart.paths.some(q => q.path === movedItem.path)) {
+        return { success: false, error: '该路径已在目标分区中' };
+      }
+      fromPart.paths.splice(pathIndex, 1);
+      toPart.paths.push(movedItem);
+      saveConfig(config);
+      return { success: true };
+    } catch (e) {
+      console.error('移动路径到分区失败:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
   ipcMain.handle('get-quick-access', () => {
     const config = loadConfig();
     const allPaths = [];
@@ -162,6 +187,28 @@ function register({ loadConfig, saveConfig }) {
       });
     });
     return allPaths;
+  });
+
+  ipcMain.handle('get-preferred-path', () => {
+    const config = loadConfig();
+    return config.preferredPath || config.savePath;
+  });
+
+  ipcMain.handle('set-preferred-path', async (event, newPath) => {
+    try {
+      if (!newPath) return { success: false, error: '路径不能为空' };
+      if (!fs.existsSync(newPath)) return { success: false, error: '路径不存在' };
+      const stat = fs.statSync(newPath);
+      if (!stat.isDirectory()) return { success: false, error: '必须是文件夹路径' };
+      const config = loadConfig();
+      config.preferredPath = newPath;
+      saveConfig(config);
+      console.log('首选路径设置成功:', newPath);
+      return { success: true };
+    } catch (e) {
+      console.error('设置首选路径失败:', e);
+      return { success: false, error: e.message };
+    }
   });
 }
 

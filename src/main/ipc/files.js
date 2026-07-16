@@ -1,6 +1,8 @@
-const { ipcMain } = require('electron');
+const { ipcMain, nativeImage, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+
+let fileManagerCurrentPath = null;
 
 function notifyFilesChanged(getFileManagerWindow, destDir) {
   if (!getFileManagerWindow) return;
@@ -11,6 +13,21 @@ function notifyFilesChanged(getFileManagerWindow, destDir) {
 }
 
 function register({ loadConfig, getFileManagerWindow }) {
+
+  // 文件管理器同步当前浏览路径
+  ipcMain.handle('sync-current-path', (event, currentPath) => {
+    fileManagerCurrentPath = currentPath;
+  });
+
+  // 获取上传目标路径：文件管理器打开则用其当前路径，否则用首选路径
+  ipcMain.handle('get-upload-dest', () => {
+    const fmWindow = getFileManagerWindow();
+    if (fmWindow && !fmWindow.isDestroyed() && fileManagerCurrentPath) {
+      return fileManagerCurrentPath;
+    }
+    const config = loadConfig();
+    return config.preferredPath || config.savePath;
+  });
   ipcMain.handle('upload-file', async (event, { sourcePath, fileName, overwrite, destDir }) => {
     const config = loadConfig();
 
@@ -255,6 +272,30 @@ function register({ loadConfig, getFileManagerWindow }) {
     } catch (e) {
       console.error('移动文件失败:', e.message);
       return { success: false, error: e.message };
+    }
+  });
+
+  // 原生文件拖拽：允许从文件管理器拖出文件到桌面/资源管理器
+  ipcMain.handle('start-drag', async (event, { filePath, iconDataUrl }) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return;
+
+      let icon;
+      if (iconDataUrl) {
+        try {
+          icon = nativeImage.createFromDataURL(iconDataUrl);
+        } catch (_) {
+          icon = undefined;
+        }
+      }
+
+      await win.webContents.startDrag({
+        file: filePath,
+        icon: icon || nativeImage.createEmpty()
+      });
+    } catch (e) {
+      console.error('原生拖拽失败:', e.message);
     }
   });
 }

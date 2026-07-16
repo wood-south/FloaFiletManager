@@ -287,7 +287,6 @@ function renderFiles(files) {
     const item = document.createElement('div');
     item.className = 'file-item';
     item.dataset.path = file.path;
-    item.draggable = true;
     item.innerHTML = `
       ${getFileIcon(file.name, file.isDirectory, file.targetIsDirectory)}
       <div class="file-info">
@@ -344,15 +343,35 @@ function renderFiles(files) {
       updateDeleteBtnState();
     });
 
-    item.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData('text/plain', file.path);
-      e.dataTransfer.effectAllowed = 'move';
-      item.classList.add('dragging');
-    });
+    // 原生拖拽：mousedown + mousemove 触发 startDrag，支持拖出到桌面/资源管理器
+    item.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.file-action-btn')) return;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let dragStarted = false;
 
-    item.addEventListener('dragend', (e) => {
-      item.classList.remove('dragging');
-      document.querySelectorAll('.file-item.drop-target').forEach(el => el.classList.remove('drop-target'));
+      const onMove = (ev) => {
+        if (dragStarted) return;
+        if (Math.abs(ev.clientX - startX) < 5 && Math.abs(ev.clientY - startY) < 5) return;
+        dragStarted = true;
+        cleanup();
+        // 获取图标 dataUrl
+        const iconImg = item.querySelector('.file-icon img');
+        const iconDataUrl = iconImg ? iconImg.src : null;
+        item.classList.add('dragging');
+        window.electronAPI.startDrag(file.path, iconDataUrl).then(() => {
+          item.classList.remove('dragging');
+        });
+      };
+
+      const onUp = () => cleanup();
+      const cleanup = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
     });
 
     item.addEventListener('dragover', (e) => {
@@ -507,6 +526,10 @@ async function loadFiles(dirPath) {
     updateSidebarActive();
     renderFiles(result.files);
     deleteBtn.disabled = true;
+    // 同步当前路径到主进程，供浮窗上传时使用
+    if (window.electronAPI.syncCurrentPath) {
+      window.electronAPI.syncCurrentPath(currentPath);
+    }
   } else {
     fileList.innerHTML = '';
     emptyState.classList.add('active');
@@ -868,8 +891,6 @@ window.electronAPI.onIconUpdated((data) => {
   });
 });
 
-loadFiles();
-
 // ========== 侧边栏分区功能 ==========
 
 const partitionList = document.getElementById('partitionList');
@@ -880,17 +901,26 @@ const pathContextMenu = document.getElementById('pathContextMenu');
 let partitions = [];
 let contextPartitionId = null;
 let contextPathIndex = -1;
+let preferredPath = '';
 
 const FOLDER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
 const CHEVRON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 const PLUS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
+const STAR_ICON = '<svg class="star-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>';
 
 async function loadPartitions() {
   try {
-    partitions = await window.electronAPI.getPartitions();
+    const [parts, pref] = await Promise.all([
+      window.electronAPI.getPartitions(),
+      window.electronAPI.getPreferredPath()
+    ]);
+    partitions = parts;
+    preferredPath = pref || '';
     renderPartitions();
+    return preferredPath;
   } catch (e) {
     console.error('加载分区失败:', e);
+    return '';
   }
 }
 
@@ -903,6 +933,7 @@ function renderPartitions() {
 
     const header = document.createElement('div');
     header.className = 'partition-header';
+    header.dataset.partitionId = partition.id;
     header.innerHTML = `
       <div class="partition-title">
         ${CHEVRON_ICON}
@@ -924,6 +955,37 @@ function renderPartitions() {
       await addPathToPartition(partition.id);
     });
 
+    // 分区头部接受路径拖放
+    header.addEventListener('dragover', (e) => {
+      if (e.dataTransfer.types.includes('text/x-path-item')) {
+        e.preventDefault();
+        header.classList.add('drag-over');
+      }
+    });
+    header.addEventListener('dragleave', () => {
+      header.classList.remove('drag-over');
+    });
+    header.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      header.classList.remove('drag-over');
+      const data = e.dataTransfer.getData('text/x-path-item');
+      if (!data) return;
+      const { fromPartitionId, pathIndex } = JSON.parse(data);
+      if (fromPartitionId === partition.id) return; // 同分区不处理
+      const result = await window.electronAPI.movePathToPartition(fromPartitionId, pathIndex, partition.id);
+      if (result.success) {
+        loadPartitions();
+      } else {
+        await showModal({
+          type: 'error',
+          title: '移动失败',
+          message: result.error || '未知错误',
+          buttons: [{ text: '确定', style: 'primary' }]
+        });
+      }
+    });
+
     group.appendChild(header);
 
     const pathsContainer = document.createElement('div');
@@ -934,12 +996,26 @@ function renderPartitions() {
       div.className = 'sidebar-item';
       div.dataset.partitionId = partition.id;
       div.dataset.pathIndex = pathIndex;
+      div.draggable = true;
       if (item.path.toLowerCase() === (currentPath || '').toLowerCase()) {
         div.classList.add('active');
       }
-      div.innerHTML = `${FOLDER_ICON}<span title="${item.path}">${item.name}</span>`;
+      const isPreferred = preferredPath && item.path.toLowerCase() === preferredPath.toLowerCase();
+      if (isPreferred) {
+        div.classList.add('preferred');
+      }
+      div.innerHTML = `${FOLDER_ICON}<span title="${item.path}">${item.name}</span>${isPreferred ? STAR_ICON : ''}`;
       div.addEventListener('click', () => {
         loadFiles(item.path);
+      });
+      // 路径项拖拽：携带来源分区ID和路径索引
+      div.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/x-path-item', JSON.stringify({ fromPartitionId: partition.id, pathIndex }));
+        e.dataTransfer.effectAllowed = 'move';
+        div.classList.add('dragging');
+      });
+      div.addEventListener('dragend', () => {
+        div.classList.remove('dragging');
       });
       pathsContainer.appendChild(div);
     });
@@ -1097,7 +1173,20 @@ async function handleContextMenuAction(menuId, action) {
       const pathItem = partition && partition.paths && partition.paths[pIdx];
       if (!pathItem) return;
 
-      if (action === 'renamePath') {
+      if (action === 'setPreferred') {
+        const result = await window.electronAPI.setPreferredPath(pathItem.path);
+        if (result.success) {
+          preferredPath = pathItem.path;
+          renderPartitions();
+        } else {
+          await showModal({
+            type: 'error',
+            title: '设置失败',
+            message: result.error || '未知错误',
+            buttons: [{ text: '确定', style: 'primary' }]
+          });
+        }
+      } else if (action === 'renamePath') {
         const newName = await showInputModal({
           type: 'question',
           title: '重命名',
@@ -1173,5 +1262,12 @@ fileList.addEventListener('click', async (e) => {
   }
 });
 
-// 初始化加载
-loadPartitions();
+// 初始化加载：先加载分区和首选路径，再加载文件列表
+(async function init() {
+  const pref = await loadPartitions();
+  if (pref) {
+    loadFiles(pref);
+  } else {
+    loadFiles();
+  }
+})();

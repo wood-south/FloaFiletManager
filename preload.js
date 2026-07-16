@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addPathToPartition: (partitionId, name, path) => ipcRenderer.invoke('add-path-to-partition', { partitionId, name, path }),
   updatePartitionPath: (partitionId, pathIndex, name) => ipcRenderer.invoke('update-partition-path', { partitionId, pathIndex, name }),
   removePartitionPath: (partitionId, pathIndex) => ipcRenderer.invoke('remove-partition-path', { partitionId, pathIndex }),
+  movePathToPartition: (fromPartitionId, pathIndex, toPartitionId) => ipcRenderer.invoke('move-path-to-partition', { fromPartitionId, pathIndex, toPartitionId }),
   uploadFile: (data) => ipcRenderer.invoke('upload-file', data),
   uploadFolder: (data) => ipcRenderer.invoke('upload-folder', data),
   isDirectory: (filePath) => ipcRenderer.invoke('is-directory', filePath),
@@ -51,5 +52,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   unsnapWindow: () => ipcRenderer.invoke('unsnap-window'),
   resnapWindow: () => ipcRenderer.invoke('resnap-window'),
   expandFloatWindow: (width, height) => ipcRenderer.invoke('expand-float-window', width, height),
-  restoreFloatWindow: () => ipcRenderer.invoke('restore-float-window')
+  restoreFloatWindow: () => ipcRenderer.invoke('restore-float-window'),
+  getPreferredPath: () => ipcRenderer.invoke('get-preferred-path'),
+  setPreferredPath: (path) => ipcRenderer.invoke('set-preferred-path', path),
+  syncCurrentPath: (path) => ipcRenderer.invoke('sync-current-path', path),
+  getUploadDest: () => ipcRenderer.invoke('get-upload-dest'),
+  startDrag: (filePath, iconDataUrl) => ipcRenderer.invoke('start-drag', { filePath, iconDataUrl })
 });
