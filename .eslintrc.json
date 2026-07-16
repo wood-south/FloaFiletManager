@@ -1,0 +1,43 @@
+{
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2022": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-console": "off",
+    "no-constant-condition": "warn",
+    "eqeqeq": ["warn", "always"],
+    "no-var": "error",
+    "prefer-const": "error",
+    "no-throw-literal": "error",
+    "no-empty": ["error", { "allowEmptyCatch": true }],
+    "no-duplicate-imports": "error",
+    "no-self-compare": "error",
+    "no-unreachable-loop": "warn",
+    "no-useless-return": "warn",
+    "curly": ["error", "multi-line"],
+    "semi": ["error", "always"],
+    "quotes": ["error", "single", { "avoidEscape": true }],
+    "indent": ["error", 2, { "SwitchCase": 1 }],
+    "comma-dangle": ["error", "only-multiline"],
+    "no-trailing-spaces": "error",
+    "eol-last": "error",
+    "no-multiple-empty-lines": ["error", { "max": 2 }]
+  },
+  "overrides": [
+    {
+      "files": ["main.js", "preload.js", "src/main/**/*.js"],
+      "env": { "node": true, "browser": false }
+    },
+    {
+      "files": ["renderer/**/*.js"],
+      "env": { "browser": true, "node": false }
+    }
+  ]
+}

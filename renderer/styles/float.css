@@ -214,6 +214,18 @@ html, body {
 .menu-btn.active { background: #667eea; }
 .menu-btn.active svg { color: white; }
 
+.menu-btn.recycle-active {
+  background: #ef4444;
+  animation: recycleGlow 1.5s ease-in-out infinite;
+}
+.menu-btn.recycle-active svg { color: white; }
+.menu-btn.recycle-active:hover { background: #dc2626; }
+
+@keyframes recycleGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
 .quit-btn { background: rgba(230, 70, 70, 0.95); }
 .quit-btn svg { color: white; }
 .quit-btn:hover { background: #e64646; }
@@ -251,6 +263,11 @@ html, body {
 .drop-overlay.drag-over { display: flex; }
 .drop-overlay svg { width: 24px; height: 24px; }
 
+.drop-overlay.recycle-mode {
+  background: rgba(239, 68, 68, 0.85);
+  border-color: rgba(255, 255, 255, 0.9);
+}
+
 @keyframes pulse {
   0%, 100% { transform: translate(-50%, -50%) scale(1); }
   50% { transform: translate(-50%, -50%) scale(1.08); }
@@ -277,4 +294,150 @@ html, body {
 .toast.show {
   top: 10px;
   opacity: 1;
+}
+
+/* 自定义模态框 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-overlay.active {
+  display: flex;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 280px;
+  max-width: 360px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: modalIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.modal-icon.warning {
+  background: #fef3c7;
+}
+
+.modal-icon.question {
+  background: #dbeafe;
+}
+
+.modal-icon.error {
+  background: #fee2e2;
+}
+
+.modal-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.modal-icon.warning svg {
+  color: #f59e0b;
+}
+
+.modal-icon.question svg {
+  color: #3b82f6;
+}
+
+.modal-icon.error svg {
+  color: #ef4444;
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.modal-message {
+  font-size: 13px;
+  color: #6b7280;
+  text-align: center;
+  margin-bottom: 20px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.modal-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 80px;
+}
+
+.modal-btn.primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.modal-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.modal-btn.danger {
+  background: #ef4444;
+  color: white;
+}
+
+.modal-btn.danger:hover {
+  background: #dc2626;
+}
+
+.modal-btn.secondary {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.modal-btn.secondary:hover {
+  background: #e5e7eb;
 }

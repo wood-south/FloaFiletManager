@@ -3,6 +3,11 @@ const menuRing = document.getElementById('menuRing');
 const quitRing = document.getElementById('quitRing');
 const dropOverlay = document.getElementById('dropOverlay');
 const toast = document.getElementById('toast');
+const modalOverlay = document.getElementById('modalOverlay');
+const modalIcon = document.getElementById('modalIcon');
+const modalTitle = document.getElementById('modalTitle');
+const modalMessage = document.getElementById('modalMessage');
+const modalButtons = document.getElementById('modalButtons');
 
 let isDragging = false;
 let mouseStartX = 0;
@@ -14,6 +19,45 @@ let clickTimer = null;
 let wasSnapped = false;
 let snapLock = false;
 let snapTimer = null;
+let recycleMode = false;
+
+const MODAL_ICONS = {
+  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+  question: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
+  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
+};
+
+async function showModal({ type = 'question', title, message, buttons }) {
+  // 浮窗默认仅 160x160，需先临时扩容以完整显示模态框
+  if (window.electronAPI.expandFloatWindow) {
+    await window.electronAPI.expandFloatWindow(420, 320);
+  }
+
+  return new Promise((resolve) => {
+    modalIcon.className = 'modal-icon ' + type;
+    modalIcon.innerHTML = MODAL_ICONS[type] || MODAL_ICONS.question;
+    modalTitle.textContent = title || '';
+    modalMessage.textContent = message || '';
+    modalButtons.innerHTML = '';
+
+    buttons.forEach((btn, index) => {
+      const el = document.createElement('button');
+      el.className = 'modal-btn ' + (btn.style || 'secondary');
+      el.textContent = btn.text;
+      el.onclick = () => {
+        modalOverlay.classList.remove('active');
+        // 关闭后恢复浮窗原尺寸
+        if (window.electronAPI.restoreFloatWindow) {
+          window.electronAPI.restoreFloatWindow();
+        }
+        resolve(index);
+      };
+      modalButtons.appendChild(el);
+    });
+
+    modalOverlay.classList.add('active');
+  });
+}
 
 function showToast(message, duration = 2000) {
   toast.textContent = message;
@@ -159,11 +203,21 @@ menuRing.addEventListener('click', async (e) => {
       break;
     case 'folder':
       closeMenu();
-      window.electronAPI.openFileManager();
+      recycleMode = !recycleMode;
+      const folderBtn = menuRing.querySelector('[data-action="folder"]');
+      if (folderBtn) {
+        folderBtn.classList.toggle('recycle-active', recycleMode);
+      }
+      showToast(recycleMode ? '回收站模式已开启' : '回收站模式已关闭', 1500);
+      // 更新拖放提示
+      const dropOverlayText = dropOverlay.querySelector('span');
+      if (dropOverlayText) {
+        dropOverlayText.textContent = recycleMode ? '释放删除到回收站' : '释放上传';
+      }
       break;
-    case 'settings':
+    case 'computer':
       closeMenu();
-      window.electronAPI.openSettings();
+      window.electronAPI.openThisComputer();
       break;
     case 'pin':
       // 不关闭菜单，切换置顶状态
@@ -206,69 +260,133 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// 拖放上传
+// 拖放上传/删除
 document.addEventListener('dragenter', (e) => {
   e.preventDefault();
+  e.stopPropagation();
   dropOverlay.classList.add('drag-over');
-});
+  const dropOverlayText = dropOverlay.querySelector('span');
+  const dropOverlaySvg = dropOverlay.querySelector('svg');
+  if (dropOverlayText) {
+    dropOverlayText.textContent = recycleMode ? '释放删除到回收站' : '释放上传';
+  }
+  if (dropOverlaySvg) {
+    if (recycleMode) {
+      dropOverlaySvg.innerHTML = `
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        <line x1="10" y1="11" x2="10" y2="17"></line>
+        <line x1="14" y1="11" x2="14" y2="17"></line>
+      `;
+    } else {
+      dropOverlaySvg.innerHTML = `
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      `;
+    }
+  }
+  if (recycleMode) {
+    dropOverlay.classList.add('recycle-mode');
+  } else {
+    dropOverlay.classList.remove('recycle-mode');
+  }
+}, true);
 
 document.addEventListener('dragover', (e) => {
   e.preventDefault();
+  e.stopPropagation();
   dropOverlay.classList.add('drag-over');
-});
+}, true);
 
 document.addEventListener('dragleave', (e) => {
   e.preventDefault();
+  e.stopPropagation();
   if (e.clientX <= 0 || e.clientY <= 0 ||
       e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
     dropOverlay.classList.remove('drag-over');
+    dropOverlay.classList.remove('recycle-mode');
   }
-});
+}, true);
 
 document.addEventListener('drop', async (e) => {
   e.preventDefault();
+  e.stopPropagation();
   dropOverlay.classList.remove('drag-over');
+  dropOverlay.classList.remove('recycle-mode');
 
-  const files = e.dataTransfer.files;
-  if (files.length === 0) return;
+  const types = Array.from(e.dataTransfer.types);
 
-  let successCount = 0;
-  for (const file of files) {
-    const result = await window.electronAPI.uploadFile({
-      sourcePath: file.path,
-      fileName: file.name
-    });
-
-    if (result.duplicate) {
-      // 弹出确认对话框
-      const choice = await window.electronAPI.showMessageBox({
-        type: 'question',
-        buttons: ['覆盖', '取消'],
-        defaultId: 1,
-        title: '文件已存在',
-        message: `文件 "${file.name}" 已存在，是否覆盖？`
-      });
-
-      if (choice.response === 0) {
-        // 选择覆盖
-        const overwriteResult = await window.electronAPI.uploadFile({
-          sourcePath: file.path,
-          fileName: file.name,
-          overwrite: true
-        });
-        if (overwriteResult.success) successCount++;
-      }
-    } else if (result.success) {
-      successCount++;
+  // 收集文件路径：支持系统拖放(Files)和文件管理页拖放(text/plain)
+  let filePaths = [];
+  if (types.includes('Files') || types.includes('application/x-moz-file')) {
+    const files = e.dataTransfer.files;
+    for (const file of files) {
+      if (file.path) filePaths.push(file.path);
+    }
+  }
+  if (types.includes('text/plain')) {
+    const text = e.dataTransfer.getData('text/plain');
+    if (text) {
+      text.split('\n').filter(p => p.trim()).forEach(p => filePaths.push(p.trim()));
     }
   }
 
-  if (successCount > 0) {
-    showToast(`成功上传 ${successCount} 个文件`);
+  if (filePaths.length === 0) return;
+
+  if (recycleMode) {
+    // 回收站模式：删除文件
+    let successCount = 0;
+    for (const filePath of filePaths) {
+      const result = await window.electronAPI.deleteFile(filePath);
+      if (result.success) successCount++;
+    }
+    if (successCount > 0) {
+      showToast(`已删除 ${successCount} 个文件到回收站`);
+    } else {
+      showToast('删除失败');
+    }
   } else {
-    showToast('上传取消');
+    // 普通模式：上传文件
+    let successCount = 0;
+    for (const filePath of filePaths) {
+      const fileName = filePath.split(/[\\/]/).pop();
+      const result = await window.electronAPI.uploadFile({
+        sourcePath: filePath,
+        fileName: fileName
+      });
+
+      if (result.duplicate) {
+        const choice = await showModal({
+          type: 'question',
+          title: '文件已存在',
+          message: `"${fileName}" 已存在，是否覆盖？`,
+          buttons: [
+            { text: '覆盖', style: 'danger' },
+            { text: '取消', style: 'secondary' }
+          ]
+        });
+
+        if (choice === 0) {
+          const overwriteResult = await window.electronAPI.uploadFile({
+            sourcePath: filePath,
+            fileName: fileName,
+            overwrite: true
+          });
+          if (overwriteResult.success) successCount++;
+        }
+      } else if (result.success) {
+        successCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      showToast(`成功上传 ${successCount} 个文件`);
+    } else {
+      showToast('上传取消');
+    }
   }
-});
+}, true);
 
 // 贴边方向变化时移动桌宠位置
 window.electronAPI.onSnapEdgeChanged((edges) => {

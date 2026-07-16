@@ -6,25 +6,24 @@ const uploadDropdownMenu = document.getElementById('uploadDropdownMenu');
 const uploadDropdownItems = document.querySelectorAll('.upload-dropdown-item');
 const backBtn = document.getElementById('backBtn');
 const fileList = document.getElementById('fileList');
+const fmBody = document.getElementById('fmBody');
 const emptyState = document.getElementById('emptyState');
 const emptyText = document.getElementById('emptyText');
 const pathText = document.getElementById('pathText');
 const fileCount = document.getElementById('fileCount');
-const openFolderBtn = document.getElementById('openFolderBtn');
-const dropZone = document.getElementById('dropZone');
+const deleteBtn = document.getElementById('deleteBtn');
 const fmPanel = document.getElementById('fmPanel');
 const modalOverlay = document.getElementById('modalOverlay');
 const modalIcon = document.getElementById('modalIcon');
 const modalTitle = document.getElementById('modalTitle');
 const modalMessage = document.getElementById('modalMessage');
+const modalInput = document.getElementById('modalInput');
 const modalButtons = document.getElementById('modalButtons');
 const viewBtns = document.querySelectorAll('.view-btn');
 
 let currentFiles = [];
 let currentPath = '';
 let searchTimeout = null;
-let rootPath = '';
-let pathHistory = [];
 
 // 自定义模态框
 const ICONS = {
@@ -39,6 +38,7 @@ function showModal({ type = 'question', title, message, buttons }) {
     modalIcon.innerHTML = ICONS[type] || ICONS.question;
     modalTitle.textContent = title || '';
     modalMessage.textContent = message || '';
+    modalInput.style.display = 'none';
     modalButtons.innerHTML = '';
 
     buttons.forEach((btn, index) => {
@@ -53,6 +53,57 @@ function showModal({ type = 'question', title, message, buttons }) {
     });
 
     modalOverlay.classList.add('active');
+  });
+}
+
+function showInputModal({ type = 'question', title, message, defaultValue = '', placeholder = '', confirmText = '确定', cancelText = '取消' }) {
+  return new Promise((resolve) => {
+    modalIcon.className = 'modal-icon ' + type;
+    modalIcon.innerHTML = ICONS[type] || ICONS.question;
+    modalTitle.textContent = title || '';
+    modalMessage.textContent = message || '';
+    modalInput.value = defaultValue || '';
+    modalInput.placeholder = placeholder || '';
+    modalInput.style.display = 'block';
+    modalButtons.innerHTML = '';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'modal-btn secondary';
+    cancelBtn.textContent = cancelText;
+    cancelBtn.onclick = () => {
+      modalOverlay.classList.remove('active');
+      resolve(null);
+    };
+    modalButtons.appendChild(cancelBtn);
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'modal-btn primary';
+    confirmBtn.textContent = confirmText;
+    confirmBtn.onclick = () => {
+      const val = modalInput.value.trim();
+      modalOverlay.classList.remove('active');
+      resolve(val || null);
+    };
+    modalButtons.appendChild(confirmBtn);
+
+    modalOverlay.classList.add('active');
+    setTimeout(() => modalInput.focus(), 50);
+
+    const handleKey = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = modalInput.value.trim();
+        modalOverlay.classList.remove('active');
+        modalInput.removeEventListener('keydown', handleKey);
+        resolve(val || null);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        modalOverlay.classList.remove('active');
+        modalInput.removeEventListener('keydown', handleKey);
+        resolve(null);
+      }
+    };
+    modalInput.addEventListener('keydown', handleKey);
   });
 }
 let currentView = 'list';
@@ -207,6 +258,9 @@ function getFileIcon(name, isDirectory, targetIsDirectory) {
 function renderFiles(files) {
   currentFiles = files;
   fileList.innerHTML = '';
+  
+  iconLoadQueue.length = 0;
+  iconLoading = false;
 
   if (currentView === 'grid') {
     fileList.classList.add('grid-view');
@@ -233,6 +287,7 @@ function renderFiles(files) {
     const item = document.createElement('div');
     item.className = 'file-item';
     item.dataset.path = file.path;
+    item.draggable = true;
     item.innerHTML = `
       ${getFileIcon(file.name, file.isDirectory, file.targetIsDirectory)}
       <div class="file-info">
@@ -256,14 +311,6 @@ function renderFiles(files) {
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
         </button>` : ''}
-        <button class="file-action-btn delete-btn" title="删除" data-action="delete" data-path="${file.path}" data-name="${file.name}" data-isdir="${file.isDirectory}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"></path>
-            <path d="M10 11v6M14 11v6"></path>
-            <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path>
-          </svg>
-        </button>
       </div>
     `;
 
@@ -291,41 +338,139 @@ function renderFiles(files) {
       });
     }
 
-    const deleteBtn = item.querySelector('[data-action="delete"]');
-    if (deleteBtn) {
-      deleteBtn.addEventListener('click', async (e) => {
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.file-action-btn')) return;
+      item.classList.toggle('selected');
+      updateDeleteBtnState();
+    });
+
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', file.path);
+      e.dataTransfer.effectAllowed = 'move';
+      item.classList.add('dragging');
+    });
+
+    item.addEventListener('dragend', (e) => {
+      item.classList.remove('dragging');
+      document.querySelectorAll('.file-item.drop-target').forEach(el => el.classList.remove('drop-target'));
+    });
+
+    item.addEventListener('dragover', (e) => {
+      // 文件夹接受所有拖放，文件项仅接受外部文件
+      if (file.isDirectory || e.dataTransfer.types.includes('Files')) {
+        e.preventDefault();
         e.stopPropagation();
-        const typeText = file.isDirectory ? '文件夹' : '文件';
+        e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move';
+        if (file.isDirectory) {
+          item.classList.add('drop-target');
+        }
+      }
+    });
+
+    item.addEventListener('dragleave', (e) => {
+      item.classList.remove('drop-target');
+    });
+
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      item.classList.remove('drop-target');
+
+      if (!file.isDirectory) return;
+
+      // 外部文件拖放 → 上传到该文件夹
+      if (e.dataTransfer.files.length > 0) {
+        const externalFiles = e.dataTransfer.files;
+        let successCount = 0;
+        for (const extFile of externalFiles) {
+          const isDir = await window.electronAPI.isDirectory(extFile.path);
+          if (isDir) {
+            const uploadResult = await window.electronAPI.uploadFolder({ sourceFolder: extFile.path, destDir: file.path });
+            if (uploadResult.duplicate) {
+              const choice = await showModal({
+                type: 'question',
+                title: '文件夹已存在',
+                message: `"${extFile.name}" 已存在，是否覆盖？`,
+                buttons: [
+                  { text: '覆盖', style: 'danger' },
+                  { text: '取消', style: 'secondary' }
+                ]
+              });
+              if (choice === 0) {
+                await window.electronAPI.deleteFile(uploadResult.destPath);
+                const retry = await window.electronAPI.uploadFolder({ sourceFolder: extFile.path, destDir: file.path });
+                if (retry.success) successCount++;
+              }
+            } else if (uploadResult.success) {
+              successCount++;
+            }
+          } else {
+            const result = await window.electronAPI.uploadFile({ sourcePath: extFile.path, fileName: extFile.name, destDir: file.path });
+            if (result.duplicate) {
+              const choice = await showModal({
+                type: 'question',
+                title: '文件已存在',
+                message: `"${extFile.name}" 已存在，是否覆盖？`,
+                buttons: [
+                  { text: '覆盖', style: 'danger' },
+                  { text: '取消', style: 'secondary' }
+                ]
+              });
+              if (choice === 0) {
+                const overwriteResult = await window.electronAPI.uploadFile({ sourcePath: extFile.path, fileName: extFile.name, overwrite: true, destDir: file.path });
+                if (overwriteResult.success) successCount++;
+              }
+            } else if (result.success) {
+              successCount++;
+            }
+          }
+        }
+        if (successCount > 0) {
+          iconDataUrlCache.clear();
+          loadFiles(currentPath, false);
+        }
+        return;
+      }
+
+      // 内部文件拖放 → 移动到该文件夹
+      const sourcePath = e.dataTransfer.getData('text/plain');
+      if (!sourcePath || sourcePath === file.path) return;
+
+      const result = await window.electronAPI.moveFile({ sourcePath, destDir: file.path });
+      if (result.success) {
+        loadFiles(currentPath, false);
+      } else if (result.duplicate) {
         const choice = await showModal({
-          type: 'warning',
-          title: `删除${typeText}`,
-          message: `确定要将 "${file.name}" 移到回收站吗？`,
+          type: 'question',
+          title: '文件已存在',
+          message: `"${sourcePath.split(/[\\/]/).pop()}" 已存在，是否覆盖？`,
           buttons: [
-            { text: '删除', style: 'danger' },
+            { text: '覆盖', style: 'danger' },
             { text: '取消', style: 'secondary' }
           ]
         });
         if (choice === 0) {
-          const result = await window.electronAPI.deleteFile(file.path);
-          if (result.success) {
+          await window.electronAPI.deleteFile(result.destPath);
+          const retryResult = await window.electronAPI.moveFile({ sourcePath, destDir: file.path });
+          if (retryResult.success) {
             loadFiles(currentPath, false);
-          } else {
-            await showModal({
-              type: 'error',
-              title: '删除失败',
-              message: result.error,
-              buttons: [{ text: '确定', style: 'primary' }]
-            });
           }
         }
-      });
-    }
+      } else {
+        await showModal({
+          type: 'error',
+          title: '移动失败',
+          message: result.error,
+          buttons: [{ text: '确定', style: 'primary' }]
+        });
+      }
+    });
 
     frag.appendChild(item);
 
     if (!file.isDirectory) {
       const iconKey = file.name.toLowerCase().endsWith('.lnk') || file.name.toLowerCase().endsWith('.url') 
-        ? file.path.toLowerCase() 
+        ? file.path.replace(/\\/g, '\\\\').toLowerCase() 
         : (file.name.split('.').pop() || '').toLowerCase();
       const iconEl = item.querySelector('.file-icon');
       if (iconDataUrlCache.has(iconKey)) {
@@ -353,19 +498,15 @@ function renderFiles(files) {
   scheduleIconLoad();
 }
 
-async function loadFiles(dirPath, addToHistory = true) {
+async function loadFiles(dirPath) {
   const result = await window.electronAPI.listFiles(dirPath);
   if (result.success) {
-    if (addToHistory && currentPath && currentPath !== result.currentPath) {
-      pathHistory.push(currentPath);
-    }
-    if (!rootPath) {
-      rootPath = result.currentPath;
-    }
     currentPath = result.currentPath;
     pathText.textContent = currentPath;
     updateBackButton();
+    updateSidebarActive();
     renderFiles(result.files);
+    deleteBtn.disabled = true;
   } else {
     fileList.innerHTML = '';
     emptyState.classList.add('active');
@@ -373,24 +514,42 @@ async function loadFiles(dirPath, addToHistory = true) {
   }
 }
 
-function updateBackButton() {
-  if (currentPath && rootPath && currentPath !== rootPath) {
-    backBtn.classList.add('active');
-  } else {
-    backBtn.classList.remove('active');
+function getParentPath(p) {
+  if (!p) return '';
+  // 去掉末尾分隔符后取父级
+  const trimmed = p.replace(/[\\/]+$/, '');
+  const idx = Math.max(trimmed.lastIndexOf('\\'), trimmed.lastIndexOf('/'));
+  if (idx <= 0) return '';
+  // 保留根盘符（如 C:\）
+  if (/^[a-zA-Z]:$/.test(trimmed.substring(0, idx))) {
+    return trimmed.substring(0, idx) + '\\';
   }
+  return trimmed.substring(0, idx);
+}
+
+function updateBackButton() {
+  // 返回按钮：当前路径有父级目录时启用
+  if (currentPath) {
+    const parentPath = getParentPath(currentPath);
+    if (parentPath && parentPath !== currentPath) {
+      backBtn.classList.add('active');
+      return;
+    }
+  }
+  backBtn.classList.remove('active');
 }
 
 function goBack() {
-  if (pathHistory.length > 0) {
-    const prevPath = pathHistory.pop();
-    loadFiles(prevPath, false);
+  if (!currentPath) return;
+  const parentPath = getParentPath(currentPath);
+  if (parentPath && parentPath !== currentPath) {
+    loadFiles(parentPath);
   }
 }
 
 // 上传文件（带重名检测）
 async function uploadFileWithCheck(sourcePath, fileName) {
-  const result = await window.electronAPI.uploadFile({ sourcePath, fileName });
+  const result = await window.electronAPI.uploadFile({ sourcePath, fileName, destDir: currentPath });
 
   if (result.duplicate) {
     const choice = await showModal({
@@ -407,7 +566,8 @@ async function uploadFileWithCheck(sourcePath, fileName) {
       const overwriteResult = await window.electronAPI.uploadFile({
         sourcePath,
         fileName,
-        overwrite: true
+        overwrite: true,
+        destDir: currentPath
       });
       return overwriteResult.success;
     }
@@ -456,6 +616,7 @@ uploadBtn.addEventListener('click', () => {
       if (ok) successCount++;
     }
     if (successCount > 0) {
+      iconDataUrlCache.clear();
       loadFiles(currentPath, false);
     }
   };
@@ -485,6 +646,7 @@ uploadDropdownItems.forEach(item => {
           if (ok) successCount++;
         }
         if (successCount > 0) {
+          iconDataUrlCache.clear();
           loadFiles(currentPath, false);
         }
       };
@@ -494,7 +656,7 @@ uploadDropdownItems.forEach(item => {
       if (!result) return;
 
       const folderName = result.split(/[\\/]/).pop();
-      const uploadResult = await window.electronAPI.uploadFolder(result);
+      const uploadResult = await window.electronAPI.uploadFolder({ sourceFolder: result, destDir: currentPath });
 
       if (uploadResult.duplicate) {
         const choice = await showModal({
@@ -510,7 +672,7 @@ uploadDropdownItems.forEach(item => {
         if (choice === 0) {
           const deleteResult = await window.electronAPI.deleteFile(uploadResult.destPath);
           if (deleteResult.success) {
-            const retryResult = await window.electronAPI.uploadFolder(result);
+            const retryResult = await window.electronAPI.uploadFolder({ sourceFolder: result, destDir: currentPath });
             if (retryResult.success) {
               loadFiles(currentPath, false);
             } else {
@@ -549,36 +711,71 @@ backBtn.addEventListener('click', () => {
   goBack();
 });
 
-openFolderBtn.addEventListener('click', () => {
-  if (currentPath) {
-    window.electronAPI.openFileLocation(currentPath);
+// 删除选中文件
+function updateDeleteBtnState() {
+  const hasSelection = fileList.querySelectorAll('.file-item.selected').length > 0;
+  deleteBtn.disabled = !hasSelection;
+}
+
+deleteBtn.addEventListener('click', async () => {
+  const selectedItems = fileList.querySelectorAll('.file-item.selected');
+  if (selectedItems.length === 0) return;
+
+  const paths = Array.from(selectedItems).map(el => el.dataset.path);
+  const names = paths.map(p => p.split(/[\\/]/).pop());
+  const choice = await showModal({
+    type: 'warning',
+    title: '删除文件',
+    message: `确定要将选中的 ${paths.length} 个文件/文件夹移到回收站吗？\n${names.slice(0, 5).join('、')}${names.length > 5 ? '...' : ''}`,
+    buttons: [
+      { text: '删除', style: 'danger' },
+      { text: '取消', style: 'secondary' }
+    ]
+  });
+
+  if (choice !== 0) return;
+
+  let successCount = 0;
+  let lastError = '';
+  for (const p of paths) {
+    const result = await window.electronAPI.deleteFile(p);
+    if (result.success) {
+      successCount++;
+    } else {
+      lastError = result.error || '未知错误';
+    }
+  }
+
+  if (successCount > 0) {
+    iconDataUrlCache.clear();
+    loadFiles(currentPath);
+  }
+  if (successCount < paths.length) {
+    await showModal({
+      type: 'error',
+      title: '部分删除失败',
+      message: `${successCount}/${paths.length} 成功删除。错误：${lastError}`,
+      buttons: [{ text: '确定', style: 'primary' }]
+    });
   }
 });
 
-fmPanel.addEventListener('dragenter', (e) => {
+// 外部文件拖放上传到当前路径（整个文件展示栏区域）
+fmBody.addEventListener('dragover', (e) => {
   e.preventDefault();
   e.stopPropagation();
-  dropZone.classList.add('active');
-});
-
-fmPanel.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  dropZone.classList.add('active');
-});
-
-fmPanel.addEventListener('dragleave', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (e.target === fmPanel || e.target === dropZone) {
-    dropZone.classList.remove('active');
+  const types = Array.from(e.dataTransfer.types);
+  if (types.includes('Files') || types.includes('application/x-moz-file')) {
+    e.dataTransfer.dropEffect = 'copy';
   }
 });
 
-fmPanel.addEventListener('drop', async (e) => {
+fmBody.addEventListener('drop', async (e) => {
   e.preventDefault();
   e.stopPropagation();
-  dropZone.classList.remove('active');
+
+  const types = Array.from(e.dataTransfer.types);
+  if (!types.includes('Files') && !types.includes('application/x-moz-file')) return;
 
   const files = e.dataTransfer.files;
   if (files.length === 0) return;
@@ -586,12 +783,11 @@ fmPanel.addEventListener('drop', async (e) => {
   let successCount = 0;
   for (const file of files) {
     const isDirectory = await window.electronAPI.isDirectory(file.path);
-    
+
     if (isDirectory) {
-      // 上传文件夹
       const folderName = file.name;
-      const uploadResult = await window.electronAPI.uploadFolder(file.path);
-      
+      const uploadResult = await window.electronAPI.uploadFolder({ sourceFolder: file.path, destDir: currentPath });
+
       if (uploadResult.duplicate) {
         const choice = await showModal({
           type: 'question',
@@ -606,7 +802,7 @@ fmPanel.addEventListener('drop', async (e) => {
         if (choice === 0) {
           const deleteResult = await window.electronAPI.deleteFile(uploadResult.destPath);
           if (deleteResult.success) {
-            const retryResult = await window.electronAPI.uploadFolder(file.path);
+            const retryResult = await window.electronAPI.uploadFolder({ sourceFolder: file.path, destDir: currentPath });
             if (retryResult.success) successCount++;
           }
         }
@@ -614,13 +810,13 @@ fmPanel.addEventListener('drop', async (e) => {
         successCount++;
       }
     } else {
-      // 上传文件
       const ok = await uploadFileWithCheck(file.path, file.name);
       if (ok) successCount++;
     }
   }
 
   if (successCount > 0) {
+    iconDataUrlCache.clear();
     loadFiles(currentPath, false);
   }
 });
@@ -628,6 +824,19 @@ fmPanel.addEventListener('drop', async (e) => {
 window.electronAPI.onFocusSearch(() => {
   searchInput.focus();
   searchInput.select();
+});
+
+// 文件变化时自动刷新（浮窗上传后通知）
+window.electronAPI.onFilesChanged((data) => {
+  if (data && data.dir) {
+    // 如果变化发生在当前路径或其子路径，刷新列表
+    const normalizedCurrent = currentPath.replace(/[\\/]+$/, '').toLowerCase();
+    const normalizedChanged = data.dir.replace(/[\\/]+$/, '').toLowerCase();
+    if (normalizedCurrent === normalizedChanged) {
+      iconDataUrlCache.clear();
+      loadFiles(currentPath);
+    }
+  }
 });
 
 viewBtns.forEach(btn => {
@@ -643,7 +852,7 @@ viewBtns.forEach(btn => {
 
 window.electronAPI.onIconUpdated((data) => {
   const { filePath, iconDataUrl } = data;
-  const iconKey = filePath.toLowerCase();
+  const iconKey = filePath.replace(/\\/g, '\\\\').toLowerCase();
   iconDataUrlCache.set(iconKey, iconDataUrl);
   // 更新所有匹配的文件图标
   const items = document.querySelectorAll('.file-item');
@@ -660,3 +869,309 @@ window.electronAPI.onIconUpdated((data) => {
 });
 
 loadFiles();
+
+// ========== 侧边栏分区功能 ==========
+
+const partitionList = document.getElementById('partitionList');
+const addPartitionBtn = document.getElementById('addPartitionBtn');
+const partitionContextMenu = document.getElementById('partitionContextMenu');
+const pathContextMenu = document.getElementById('pathContextMenu');
+
+let partitions = [];
+let contextPartitionId = null;
+let contextPathIndex = -1;
+
+const FOLDER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>';
+const CHEVRON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+const PLUS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
+
+async function loadPartitions() {
+  try {
+    partitions = await window.electronAPI.getPartitions();
+    renderPartitions();
+  } catch (e) {
+    console.error('加载分区失败:', e);
+  }
+}
+
+function renderPartitions() {
+  partitionList.innerHTML = '';
+  partitions.forEach((partition) => {
+    const group = document.createElement('div');
+    group.className = 'partition-group';
+    group.dataset.partitionId = partition.id;
+
+    const header = document.createElement('div');
+    header.className = 'partition-header';
+    header.innerHTML = `
+      <div class="partition-title">
+        ${CHEVRON_ICON}
+        <span>${partition.name}</span>
+      </div>
+      <button class="partition-add-btn" title="添加路径">
+        ${PLUS_ICON}
+      </button>
+    `;
+
+    const titleEl = header.querySelector('.partition-title');
+    titleEl.addEventListener('click', () => {
+      group.classList.toggle('collapsed');
+    });
+
+    const addBtn = header.querySelector('.partition-add-btn');
+    addBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await addPathToPartition(partition.id);
+    });
+
+    group.appendChild(header);
+
+    const pathsContainer = document.createElement('div');
+    pathsContainer.className = 'partition-paths';
+
+    (partition.paths || []).forEach((item, pathIndex) => {
+      const div = document.createElement('div');
+      div.className = 'sidebar-item';
+      div.dataset.partitionId = partition.id;
+      div.dataset.pathIndex = pathIndex;
+      if (item.path.toLowerCase() === (currentPath || '').toLowerCase()) {
+        div.classList.add('active');
+      }
+      div.innerHTML = `${FOLDER_ICON}<span title="${item.path}">${item.name}</span>`;
+      div.addEventListener('click', () => {
+        loadFiles(item.path);
+      });
+      pathsContainer.appendChild(div);
+    });
+
+    group.appendChild(pathsContainer);
+    partitionList.appendChild(group);
+  });
+}
+
+function updateSidebarActive() {
+  const items = partitionList.querySelectorAll('.sidebar-item');
+  items.forEach((div) => {
+    const partitionId = div.dataset.partitionId;
+    const pathIndex = parseInt(div.dataset.pathIndex);
+    const partition = partitions.find(p => p.id === partitionId);
+    const item = partition && partition.paths && partition.paths[pathIndex];
+    if (item && item.path.toLowerCase() === (currentPath || '').toLowerCase()) {
+      div.classList.add('active');
+    } else {
+      div.classList.remove('active');
+    }
+  });
+}
+
+function showContextMenu(menu, x, y) {
+  partitionContextMenu.classList.remove('active');
+  pathContextMenu.classList.remove('active');
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.classList.add('active');
+}
+
+function hideAllContextMenus() {
+  partitionContextMenu.classList.remove('active');
+  pathContextMenu.classList.remove('active');
+  contextPartitionId = null;
+  contextPathIndex = -1;
+}
+
+async function addPathToPartition(partitionId) {
+  const dirPath = await window.electronAPI.selectDirectory();
+  if (!dirPath) return;
+
+  const defaultName = dirPath.split(/[\\/]/).filter(Boolean).pop() || dirPath;
+  const name = await showInputModal({
+    type: 'question',
+    title: '添加路径',
+    message: '请输入显示名称：',
+    defaultValue: defaultName,
+    confirmText: '添加',
+    cancelText: '取消'
+  });
+  if (!name) return;
+
+  const result = await window.electronAPI.addPathToPartition(partitionId, name.trim(), dirPath);
+  if (result.success) {
+    loadPartitions();
+  } else {
+    await showModal({
+      type: 'error',
+      title: '添加失败',
+      message: result.error || '未知错误',
+      buttons: [{ text: '确定', style: 'primary' }]
+    });
+  }
+}
+
+partitionList.addEventListener('contextmenu', (e) => {
+  const pathItem = e.target.closest('.sidebar-item');
+  const partitionHeader = e.target.closest('.partition-header');
+  if (pathItem) {
+    e.preventDefault();
+    e.stopPropagation();
+    contextPartitionId = pathItem.dataset.partitionId;
+    contextPathIndex = parseInt(pathItem.dataset.pathIndex);
+    showContextMenu(pathContextMenu, e.clientX, e.clientY);
+  } else if (partitionHeader) {
+    e.preventDefault();
+    e.stopPropagation();
+    const group = partitionHeader.closest('.partition-group');
+    if (group) {
+      contextPartitionId = group.dataset.partitionId;
+      contextPathIndex = -1;
+      showContextMenu(partitionContextMenu, e.clientX, e.clientY);
+    }
+  }
+});
+
+document.addEventListener('click', (e) => {
+  const ctxItem = e.target.closest('.ctx-item');
+  if (ctxItem) {
+    const menu = ctxItem.closest('.sidebar-context-menu');
+    if (!menu) return;
+    handleContextMenuAction(menu.id, ctxItem.dataset.action);
+    return;
+  }
+  if (!e.target.closest('.sidebar-context-menu') && !e.target.closest('.sidebar-item') && !e.target.closest('.partition-header')) {
+    hideAllContextMenus();
+  }
+});
+
+async function handleContextMenuAction(menuId, action) {
+  try {
+    const pId = contextPartitionId;
+    const pIdx = contextPathIndex;
+    hideAllContextMenus();
+
+    if (menuId === 'partitionContextMenu') {
+      if (!pId) return;
+      const partition = partitions.find(p => p.id === pId);
+      if (!partition) return;
+
+      if (action === 'addPath') {
+        await addPathToPartition(partition.id);
+      } else if (action === 'renamePartition') {
+        const newName = await showInputModal({
+          type: 'question',
+          title: '重命名分区',
+          message: '请输入分区新名称：',
+          defaultValue: partition.name,
+          confirmText: '确定',
+          cancelText: '取消'
+        });
+        if (newName) {
+          await window.electronAPI.updatePartition(partition.id, newName);
+          loadPartitions();
+        }
+      } else if (action === 'deletePartition') {
+        if (partition.id === 'default') {
+          await showModal({
+            type: 'warning',
+            title: '无法删除',
+            message: '默认分区不能删除',
+            buttons: [{ text: '确定', style: 'primary' }]
+          });
+          return;
+        }
+        const result = await showModal({
+          type: 'question',
+          title: '删除分区',
+          message: `确定要删除分区 "${partition.name}" 吗？该分区下的所有路径也会被移除。`,
+          buttons: [
+            { text: '删除', style: 'danger' },
+            { text: '取消', style: 'secondary' }
+          ]
+        });
+        if (result === 0) {
+          await window.electronAPI.removePartition(partition.id);
+          loadPartitions();
+        }
+      }
+    } else if (menuId === 'pathContextMenu') {
+      if (!pId || pIdx < 0) return;
+      const partition = partitions.find(p => p.id === pId);
+      const pathItem = partition && partition.paths && partition.paths[pIdx];
+      if (!pathItem) return;
+
+      if (action === 'renamePath') {
+        const newName = await showInputModal({
+          type: 'question',
+          title: '重命名',
+          message: '请输入新名称：',
+          defaultValue: pathItem.name,
+          confirmText: '确定',
+          cancelText: '取消'
+        });
+        if (newName) {
+          await window.electronAPI.updatePartitionPath(pId, pIdx, newName);
+          loadPartitions();
+        }
+      } else if (action === 'removePath') {
+        const result = await showModal({
+          type: 'question',
+          title: '移除路径',
+          message: `确定要从分区中移除 "${pathItem.name}" 吗？`,
+          buttons: [
+            { text: '移除', style: 'danger' },
+            { text: '取消', style: 'secondary' }
+          ]
+        });
+        if (result === 0) {
+          await window.electronAPI.removePartitionPath(pId, pIdx);
+          loadPartitions();
+        }
+      }
+    }
+  } catch (err) {
+    console.error('右键菜单操作失败:', err);
+  }
+}
+
+addPartitionBtn.addEventListener('click', async () => {
+  const name = await showInputModal({
+    type: 'question',
+    title: '新建分区',
+    message: '请输入分区名称：',
+    placeholder: '例如：工作、学习、娱乐',
+    confirmText: '创建',
+    cancelText: '取消'
+  });
+  if (!name) return;
+
+  const result = await window.electronAPI.addPartition(name.trim());
+  if (result.success) {
+    loadPartitions();
+  } else {
+    await showModal({
+      type: 'error',
+      title: '创建失败',
+      message: result.error || '未知错误',
+      buttons: [{ text: '确定', style: 'primary' }]
+    });
+  }
+});
+
+fileList.addEventListener('click', async (e) => {
+  const actionBtn = e.target.closest('.file-action-btn');
+  if (!actionBtn) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const action = actionBtn.dataset.action;
+  const filePath = actionBtn.dataset.path;
+  if (!filePath) return;
+
+  if (action === 'locate') {
+    window.electronAPI.openFileLocation(filePath);
+  } else if (action === 'open') {
+    window.electronAPI.openFile(filePath);
+  }
+});
+
+// 初始化加载
+loadPartitions();

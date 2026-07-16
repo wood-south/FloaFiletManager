@@ -1,14 +1,39 @@
-#依赖文件
+# Dependencies
 node_modules/
-#日志文件
-*.log
-#编译输出
+
+# Build output
 dist-new/
-#用户数据
+out/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime data
 .userdata/
-#本地配置文件
 *.local
-#上传的文件
-uploads/
-#缓存文件
+
+# Cache
 icon-cache.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Uploads (user data)
+uploads/
