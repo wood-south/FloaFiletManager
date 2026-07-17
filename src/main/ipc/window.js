@@ -206,6 +206,34 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     }
     return true;
   });
+
+  ipcMain.handle('toggle-dock', () => {
+    const { toggleDockWindow } = require('../windows');
+    return toggleDockWindow();
+  });
+
+  ipcMain.handle('show-dock', () => {
+    const { showDockWindow } = require('../windows');
+    showDockWindow();
+  });
+
+  ipcMain.handle('hide-dock', () => {
+    const { hideDockWindow } = require('../windows');
+    hideDockWindow();
+  });
+
+  ipcMain.handle('move-dock', (event, deltaX, deltaY) => {
+    const { getDockWindow } = require('../windows');
+    const win = getDockWindow();
+    if (!win) return;
+    const bounds = win.getBounds();
+    const { workArea } = screen.getPrimaryDisplay();
+    let newX = bounds.x + deltaX;
+    let newY = bounds.y + deltaY;
+    newX = Math.max(workArea.x, Math.min(newX, workArea.x + workArea.width - bounds.width));
+    newY = Math.max(workArea.y, Math.min(newY, workArea.y + workArea.height - bounds.height));
+    win.setPosition(newX, newY);
+  });
 }
 
 module.exports = { register };

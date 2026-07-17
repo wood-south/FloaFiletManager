@@ -5,6 +5,7 @@ const { loadConfig, rootDir } = require('./config');
 let floatWindow = null;
 let fileManagerWindow = null;
 let iconHelperWindow = null;
+let dockWindow = null;
 let alwaysOnTopEnabled = true;
 
 let iconHelperReady = false;
@@ -14,6 +15,7 @@ const iconRequestMap = new Map();
 function getFloatWindow() { return floatWindow; }
 function getFileManagerWindow() { return fileManagerWindow; }
 function getIconHelperWindow() { return iconHelperWindow; }
+function getDockWindow() { return dockWindow; }
 function getAlwaysOnTopEnabled() { return alwaysOnTopEnabled; }
 function setAlwaysOnTopEnabled(val) { alwaysOnTopEnabled = val; }
 function getIconHelperReady() { return iconHelperReady; }
@@ -149,6 +151,73 @@ function createIconHelperWindow() {
   });
 }
 
+function createDockWindow() {
+  if (dockWindow && !dockWindow.isDestroyed()) {
+    dockWindow.focus();
+    return dockWindow;
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { workArea } = primaryDisplay;
+  const dockWidth = 800;
+  const dockHeight = 90;
+
+  dockWindow = new BrowserWindow({
+    width: dockWidth,
+    height: dockHeight,
+    x: Math.round(workArea.x + (workArea.width - dockWidth) / 2),
+    y: workArea.height - dockHeight + 20,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    focusable: true,
+    webPreferences: {
+      preload: path.join(rootDir, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  dockWindow.setAlwaysOnTop(true, 'screen-saver');
+  dockWindow.setVisibleOnAllWorkspaces(true);
+  dockWindow.loadFile(path.join(rootDir, 'renderer', 'dock.html'));
+
+  dockWindow.on('closed', () => {
+    dockWindow = null;
+  });
+
+  return dockWindow;
+}
+
+function showDockWindow() {
+  if (!dockWindow || dockWindow.isDestroyed()) {
+    createDockWindow();
+  } else {
+    dockWindow.show();
+    dockWindow.focus();
+  }
+}
+
+function hideDockWindow() {
+  if (dockWindow && !dockWindow.isDestroyed()) {
+    dockWindow.hide();
+  }
+}
+
+function toggleDockWindow() {
+  if (dockWindow && !dockWindow.isDestroyed() && dockWindow.isVisible()) {
+    hideDockWindow();
+    return false;
+  } else {
+    showDockWindow();
+    return true;
+  }
+}
+
 function requestIconFromHelper(filePath, isDirectory) {
   return new Promise((resolve) => {
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -181,10 +250,15 @@ module.exports = {
   createFloatWindow,
   createFileManagerWindow,
   createIconHelperWindow,
+  createDockWindow,
+  showDockWindow,
+  hideDockWindow,
+  toggleDockWindow,
   requestIconFromHelper,
   getFloatWindow,
   getFileManagerWindow,
   getIconHelperWindow,
+  getDockWindow,
   getAlwaysOnTopEnabled,
   setAlwaysOnTopEnabled,
   getIconHelperReady,

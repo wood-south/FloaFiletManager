@@ -57,5 +57,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setPreferredPath: (path) => ipcRenderer.invoke('set-preferred-path', path),
   syncCurrentPath: (path) => ipcRenderer.invoke('sync-current-path', path),
   getUploadDest: () => ipcRenderer.invoke('get-upload-dest'),
-  startDrag: (filePath, iconDataUrl) => ipcRenderer.invoke('start-drag', { filePath, iconDataUrl })
+  startDrag: (filePath, iconDataUrl) => ipcRenderer.invoke('start-drag', { filePath, iconDataUrl }),
+  systemAction: (action) => ipcRenderer.invoke('system-action', action),
+  toggleTaskbar: (hide) => ipcRenderer.invoke('toggle-taskbar', hide),
+  getNavItems: () => ipcRenderer.invoke('get-nav-items'),
+  saveNavItems: (items) => ipcRenderer.invoke('save-nav-items', items),
+  addNavItem: (item) => ipcRenderer.invoke('add-nav-item', item),
+  updateNavItem: (id, updates) => ipcRenderer.invoke('update-nav-item', { id, updates }),
+  removeNavItem: (id) => ipcRenderer.invoke('remove-nav-item', id),
+  toggleDock: () => ipcRenderer.invoke('toggle-dock'),
+  showDock: () => ipcRenderer.invoke('show-dock'),
+  hideDock: () => ipcRenderer.invoke('hide-dock'),
+  moveDock: (deltaX, deltaY) => ipcRenderer.invoke('move-dock', deltaX, deltaY),
+  getDockSettings: () => ipcRenderer.invoke('get-dock-settings'),
+  saveDockSettings: (settings) => ipcRenderer.invoke('save-dock-settings', settings)
 });

@@ -1,0 +1,529 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+
+.dock-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 16px;
+}
+
+.dock-panel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  background: rgba(30, 30, 30, var(--dock-opacity, 0.72));
+  backdrop-filter: blur(var(--dock-blur, 30px)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--dock-blur, 30px)) saturate(1.5);
+  border-radius: 24px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    0 4px 12px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: box-shadow 0.3s ease;
+}
+
+.dock-panel:hover {
+  box-shadow:
+    0 16px 50px rgba(0, 0, 0, 0.4),
+    0 6px 16px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.dock-start {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.dock-start:hover {
+  transform: translateY(-10px) scale(1.15);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.dock-start svg {
+  width: 24px;
+  height: 24px;
+}
+
+.dock-separator {
+  width: 1px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.dock-items {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.dock-item {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  color: rgba(255, 255, 255, 0.9);
+  flex-shrink: 0;
+  position: relative;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dock-item:hover {
+  transform: translateY(-14px) scale(1.25);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 邻居效果：悬停时相邻图标轻微放大 */
+.dock-item:hover + .dock-item,
+.dock-item:has(+ .dock-item:hover) {
+  transform: translateY(-6px) scale(1.08);
+}
+
+.dock-item svg {
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
+}
+
+.dock-item img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
+}
+
+/* 运行指示点 */
+.dock-item::before {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.dock-item.running::before {
+  opacity: 1;
+}
+
+/* 悬停标签 - 在图标下方显示避免超出窗口 */
+.dock-item .dock-tooltip {
+  position: absolute;
+  bottom: -38px;
+  left: 50%;
+  transform: translateX(-50%) scale(0);
+  background: rgba(35, 35, 35, 0.95);
+  backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 6px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 10;
+}
+
+.dock-item .dock-tooltip::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: rgba(35, 35, 35, 0.95);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dock-item:hover .dock-tooltip {
+  transform: translateX(-50%) scale(1);
+  opacity: 1;
+}
+
+.dock-tray {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.dock-tray-item {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.dock-tray-item:hover {
+  transform: translateY(-8px) scale(1.12);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.dock-tray-item svg {
+  width: 18px;
+  height: 18px;
+}
+
+#dockTime {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.dock-close {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dock-close:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.15);
+}
+
+.dock-item:active,
+.dock-start:active,
+.dock-tray-item:active {
+  transform: scale(0.92);
+  transition: transform 0.1s ease;
+}
+
+/* 右键菜单 */
+.dock-context-menu {
+  position: fixed;
+  background: rgba(38, 38, 38, 0.96);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border-radius: 14px;
+  padding: 6px;
+  min-width: 160px;
+  z-index: 10000;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: menuAppear 0.15s ease;
+}
+
+@keyframes menuAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.dock-context-menu .ctx-item {
+  padding: 8px 14px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock-context-menu .ctx-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dock-context-menu .ctx-item.danger {
+  color: #ff7b7b;
+}
+
+.dock-context-menu .ctx-item.danger:hover {
+  background: rgba(255, 107, 107, 0.15);
+}
+
+/* 拖拽提示 */
+.dock-items.drag-over {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+
+/* 拖动中样式 */
+.dock-panel.dragging {
+  cursor: grabbing;
+  opacity: 0.9;
+}
+
+/* 设置面板 */
+.dock-settings-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  width: 320px;
+  background: rgba(35, 35, 35, 0.96);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 10001;
+  overflow: hidden;
+}
+
+.dock-settings-panel.active {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-header h3 {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.settings-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.settings-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.settings-content {
+  padding: 16px 20px;
+}
+
+.settings-section {
+  margin-bottom: 20px;
+}
+
+.settings-section:last-child {
+  margin-bottom: 0;
+}
+
+.settings-title {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+.settings-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.settings-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-item:last-child {
+  margin-bottom: 0;
+}
+
+.settings-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-right: 12px;
+  accent-color: #0078d4;
+  cursor: pointer;
+}
+
+.settings-item span {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+}
+
+.settings-btn {
+  flex: 1;
+  padding: 10px 16px;
+  background: rgba(0, 120, 212, 0.15);
+  border: 1px solid rgba(0, 120, 212, 0.3);
+  border-radius: 10px;
+  color: #0078d4;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-btn:hover {
+  background: rgba(0, 120, 212, 0.25);
+  border-color: rgba(0, 120, 212, 0.5);
+}
+
+.settings-info {
+  padding: 8px 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+}
+
+.settings-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  z-index: 10000;
+}
+
+.settings-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 滑块样式 */
+.settings-slider-item {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.settings-slider-item:last-child {
+  margin-bottom: 0;
+}
+
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+}
+
+.slider-label span:last-child {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #0078d4;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 120, 212, 0.4);
+  transition: transform 0.15s ease;
+}
+
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #0078d4;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 120, 212, 0.4);
+}

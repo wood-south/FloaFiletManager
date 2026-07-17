@@ -19,6 +19,7 @@ if (!gotTheLock) {
   const ipcIcons = require('./ipc/icons');
   const ipcWindow = require('./ipc/window');
   const ipcDialog = require('./ipc/dialog');
+  const ipcSystem = require('./ipc/system');
 
   app.on('second-instance', () => {
     const floatWindow = windows.getFloatWindow();
@@ -93,4 +94,5 @@ if (!gotTheLock) {
     getFileManagerWindow: windows.getFileManagerWindow,
     iconExtractor
   });
+  ipcSystem.register({ loadConfig, saveConfig });
 }

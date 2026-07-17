@@ -199,12 +199,9 @@ menuRing.addEventListener('click', async (e) => {
   const action = btn.dataset.action;
 
   switch (action) {
-    case 'search':
+    case 'nav':
       closeMenu();
-      window.electronAPI.openFileManager();
-      setTimeout(() => {
-        window.electronAPI.focusSearch();
-      }, 300);
+      window.electronAPI.toggleDock();
       break;
     case 'folder':
       closeMenu();
@@ -409,3 +406,5 @@ window.electronAPI.onSnapEdgeChanged((edges) => {
     }
   }
 });
+
+
