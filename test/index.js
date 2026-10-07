@@ -9,6 +9,7 @@ module.exports = [
   { name: 'ZIP 读取器（阶段8.5）', file: 'zip-reader.test.js' },
   { name: '桌宠动画帧播放器 frames.js', file: 'frames.test.js' },
   { name: '桌宠皮肤渲染 skin-render.js', file: 'skin-render.test.js' },
+  { name: '设置页辅助逻辑 settings-ui.js', file: 'settings-ui.test.js' },
   { name: '皮肤导入来源白名单 skin.js', file: 'skin-ipc.test.js' },
   { name: '皮肤 IPC 处理器行为', file: 'skin-ipc-behavior.test.js' },
   { name: 'IPC 处理器参数健壮性', file: 'ipc-handler-robustness.test.js' },

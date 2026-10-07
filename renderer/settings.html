@@ -31,6 +31,15 @@
       </header>
 
       <nav class="settings-nav" id="settingsNav">
+        <div class="nav-search">
+          <input
+            type="search"
+            id="settingsSearch"
+            class="nav-search-input"
+            placeholder="搜索设置项…"
+            autocomplete="off"
+          />
+        </div>
         <button class="nav-item active" data-tab="appearance">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="13.5" cy="6.5" r="2.5"></circle>
@@ -56,6 +65,16 @@
             <rect x="3" y="14" width="7" height="7"></rect>
           </svg>
           <span>图标</span>
+        </button>
+        <button class="nav-item" data-tab="pet">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5c-3 0-5 2-5 5 0 3 2 5 5 5s5-2 5-5c0-3-2-5-5-5z"></path>
+            <path d="M8 5 6 2"></path>
+            <path d="M16 5l2-3"></path>
+            <path d="M4 13c-1 3 0 6 2 7"></path>
+            <path d="M20 13c1 3 0 6-2 7"></path>
+          </svg>
+          <span>桌宠</span>
         </button>
         <button class="nav-item" data-tab="about">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -244,6 +263,44 @@
           </div>
         </section>
 
+        <section class="settings-tab" data-tab="pet">
+          <div class="section-title">当前皮肤</div>
+          <div class="skin-current" id="skinCurrent">
+            <div class="empty-tip">正在加载…</div>
+          </div>
+
+          <div class="section-title">试穿预览</div>
+          <p class="hint-text">
+            选一个皮肤即可预览。「应用」会写入配置并让桌宠立即换装（无需重启）。
+          </p>
+          <div class="skin-preview" id="skinPreview">
+            <div class="skin-preview-stage" id="skinPreviewStage">
+              <div class="empty-tip">点击下方皮肤卡片试穿</div>
+            </div>
+            <div class="skin-preview-actions">
+              <button class="action-btn primary" id="btnApplySkin" disabled>应用到桌宠</button>
+              <button class="action-btn" id="btnRevertSkin">还原内置</button>
+            </div>
+          </div>
+
+          <div class="section-title">皮肤商城（本地）</div>
+          <p class="hint-text">
+            皮肤包是一个文件夹或 .zip，内含 <code>pet.json</code> 与图片资源。
+            导入前会做校验（必需字段、体积上限、路径穿越、可执行文件一律拒绝）。
+          </p>
+          <div class="action-row">
+            <button class="action-btn primary" id="btnImportSkinDir">导入文件夹…</button>
+            <button class="action-btn" id="btnImportSkinZip">导入 zip…</button>
+            <button class="action-btn" id="btnRefreshSkins">刷新列表</button>
+          </div>
+          <div class="skin-error" id="skinError" hidden></div>
+
+          <div class="section-title">已安装皮肤</div>
+          <div class="skin-list" id="skinList">
+            <div class="empty-tip">正在加载…</div>
+          </div>
+        </section>
+
         <section class="settings-tab" data-tab="about">
           <div class="about-logo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -265,6 +322,7 @@
       </footer>
     </div>
 
+    <script src="scripts/settings-ui.js"></script>
     <script src="scripts/settings.js"></script>
   </body>
 </html>

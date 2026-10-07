@@ -77,12 +77,12 @@ console.log('\n[1] 模块加载与通道注册');
   ok('register 接受缺失路径而不抛错', () => {
     assert.doesNotThrow(() => skin.register({}));
   });
-  ok('register 后注册了 7 个通道', () => {
+  ok('register 后注册了 8 个通道', () => {
     handlers.length = 0;
     skin.register({ userDataDir: root, rootDir: root });
     assert.deepStrictEqual(handlers.slice().sort(),
       ['apply-skin', 'export-skin', 'get-active-skin', 'import-skin', 'list-skins',
-        'select-skin-directory', 'select-skin-zip']);
+        'preview-skin', 'select-skin-directory', 'select-skin-zip']);
   });
   ok('重复 register 不会抛错（交由 electron 处理重复注册）', () => {
     assert.doesNotThrow(() => skin.register({ userDataDir: root, rootDir: root }));
@@ -252,9 +252,9 @@ console.log('\n[7] 渲染层接线契约（通道 ↔ preload ↔ 浮窗壳层�
   const floatJs = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
   const floatHtml = fs.readFileSync(path.join(root, 'renderer', 'float.html'), 'utf8');
 
-  ok('preload 暴露了 7 个皮肤相关方法', () => {
+  ok('preload 暴露了 8 个皮肤相关方法', () => {
     ['listSkins', 'selectSkinDirectory', 'selectSkinZip', 'importSkin', 'exportSkin',
-      'applySkin', 'getActiveSkin'].forEach((m) => {
+      'applySkin', 'previewSkin', 'getActiveSkin'].forEach((m) => {
       assert.ok(preload.includes(m + ':'), 'preload 缺少 ' + m);
     });
   });
@@ -265,7 +265,15 @@ console.log('\n[7] 渲染层接线契约（通道 ↔ preload ↔ 浮窗壳层�
     assert.ok(preload.includes("invoke('import-skin'"));
     assert.ok(preload.includes("invoke('export-skin'"));
     assert.ok(preload.includes("invoke('apply-skin'"));
+    assert.ok(preload.includes("invoke('preview-skin'"));
     assert.ok(preload.includes("invoke('get-active-skin')"));
+  });
+  ok('试穿走只读通道（apply-skin 会写配置，不能拿它试穿）', () => {
+    const src = fs.readFileSync(path.join(root, 'src', 'main', 'ipc', 'skin.js'), 'utf8');
+    const previewBlock = src.slice(src.indexOf("handle('preview-skin'"));
+    const body = previewBlock.slice(0, previewBlock.indexOf('});'));
+    assert.ok(!/saveConfig|writeConfig/.test(body),
+      'preview-skin 不应写配置');
   });
   ok('preload 提供换肤广播订阅（onSkinChanged → skin-changed）', () => {
     assert.ok(preload.includes('onSkinChanged'), 'preload 缺少 onSkinChanged');

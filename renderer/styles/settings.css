@@ -101,9 +101,39 @@ body {
 .settings-nav {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 10px 14px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* 设置项搜索（阶段 8 设置页优化）
+   占满整行放在最前；过滤的是「设置项」而非页签 ——
+   页签始终可见，避免用户搜不到时以为整个设置页坏了。 */
+.nav-search {
+  flex: 0 0 100%;
+  padding: 0 0 8px;
+  order: -1;
+}
+
+.nav-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  outline: none;
+}
+
+.nav-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.nav-search-input:focus {
+  border-color: rgba(74, 158, 255, 0.6);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .nav-item {
@@ -864,4 +894,217 @@ body {
 
 .footer-btn.primary:hover {
   box-shadow: 0 6px 16px rgba(74, 158, 255, 0.5);
+}
+
+/* ========== 桌宠与皮肤商城（阶段 8.3 / 8.4） ========== */
+
+/* 轻提示 */
+.settings-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 64px;
+  transform: translate(-50%, 8px);
+  padding: 8px 14px;
+  max-width: 80%;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(30, 30, 36, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+  z-index: 50;
+}
+
+.settings-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* 搜索无结果时的空态 */
+.search-empty-tip {
+  margin-top: 12px;
+  text-align: center;
+}
+
+/* 搜索过滤：被过滤掉的设置项不占布局、也不可聚焦 */
+.settings-tab .filtered-out {
+  display: none !important;
+}
+
+.skin-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.skin-current-badge {
+  padding: 2px 7px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: rgba(74, 158, 255, 0.16);
+  color: #7cb8ff;
+}
+
+.skin-current-name {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+}
+
+/* 试穿预览：棋盘底便于看清透明 PNG 的边缘 */
+.skin-preview {
+  margin-bottom: 16px;
+}
+
+.skin-preview-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.03);
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  overflow: hidden;
+}
+
+.skin-preview-stage img,
+.skin-preview-stage canvas {
+  max-width: 100%;
+  max-height: 160px;
+}
+
+.skin-preview-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.skin-error {
+  margin: 10px 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #ffb4b4;
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
+
+.skin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skin-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.skin-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.skin-card.active {
+  border-color: rgba(74, 158, 255, 0.65);
+  background: rgba(74, 158, 255, 0.1);
+}
+
+.skin-card.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.skin-card-thumb {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.skin-card-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.skin-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.skin-card-name {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skin-card-meta {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skin-card-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.skin-card-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.skin-card-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.skin-card-btn.primary {
+  color: #cfe6ff;
+  background: rgba(74, 158, 255, 0.2);
+  border-color: rgba(74, 158, 255, 0.5);
 }

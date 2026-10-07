@@ -474,6 +474,7 @@ if (settingsNav) {
       s.classList.toggle('active', s.dataset.tab === tab);
     });
     if (tab === 'icons') loadNavItems();
+    if (tab === 'pet') loadSkins();
   });
 }
 
@@ -611,7 +612,266 @@ if (window.electronAPI && window.electronAPI.onDockStyleChanged) {
   });
 }
 
+/* ========== 轻提示 ==========
+   设置页原先没有提示能力，皮肤导入/应用需要给用户反馈。
+   用固定定位的小条，2 秒后自动消失；同时只保留一条。 */
+let toastEl = null;
+let toastTimer = null;
+function showToast(msg, ms) {
+  if (!msg) return;
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.className = 'settings-toast';
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    if (toastEl) toastEl.classList.remove('show');
+  }, ms || 2000);
+}
+
+/* ========== 设置项搜索（设置页优化） ==========
+   过滤的是「设置项」而不是页签：页签始终可见，避免用户搜不到时
+   以为整个设置页坏了。过滤逻辑在 settings-ui.js（有单测）。
+   皮肤页是动态渲染的，因此过滤后再跑一次皮肤渲染以反映当前列表。 */
+const settingsSearch = document.getElementById('settingsSearch');
+if (settingsSearch) {
+  settingsSearch.addEventListener('input', () => {
+    const q = settingsSearch.value;
+    document.querySelectorAll('.settings-tab').forEach((tab) => {
+      const res = window.SETTINGS_UI.filterTab(tab, q);
+      // 在页签内显示/隐藏「无匹配」空态
+      let tip = tab.querySelector('.search-empty-tip');
+      const active = tab.classList.contains('active');
+      if (!tip) {
+        tip = document.createElement('div');
+        tip.className = 'empty-tip search-empty-tip';
+        tip.textContent = '没有匹配的设置项';
+        tab.appendChild(tip);
+      }
+      tip.hidden = !(q && res.visible === 0 && active);
+    });
+  });
+}
+
+/* ========== 桌宠 / 皮肤商城（阶段 8.3 / 8.4） ========== */
+const skinListEl = document.getElementById('skinList');
+const skinCurrentEl = document.getElementById('skinCurrent');
+const skinPreviewStage = document.getElementById('skinPreviewStage');
+const skinErrorEl = document.getElementById('skinError');
+const btnImportSkinDir = document.getElementById('btnImportSkinDir');
+const btnImportSkinZip = document.getElementById('btnImportSkinZip');
+const btnRefreshSkins = document.getElementById('btnRefreshSkins');
+const btnApplySkin = document.getElementById('btnApplySkin');
+const btnRevertSkin = document.getElementById('btnRevertSkin');
+
+/** 已加载的皮肤列表（含 source），供试穿/应用按 id 查找 */
+let skinCache = [];
+/** 当前正在试穿的皮肤 id（尚未应用） */
+let previewingSkinId = null;
+/** 已应用的皮肤 id */
+let activeSkinId = '';
+
+function showSkinError(msg) {
+  if (!skinErrorEl) return;
+  if (!msg) {
+    skinErrorEl.hidden = true;
+    skinErrorEl.textContent = '';
+    return;
+  }
+  skinErrorEl.hidden = false;
+  skinErrorEl.textContent = msg;
+}
+
+async function loadSkins() {
+  if (!skinListEl) return;
+  if (!window.electronAPI?.listSkins) {
+    skinListEl.innerHTML = '<div class="empty-tip">当前版本不支持皮肤功能</div>';
+    return;
+  }
+  try {
+    const res = await window.electronAPI.listSkins();
+    skinCache = window.SETTINGS_UI.flattenSkins(res);
+    // 皮肤包自身的问题（坏包、不可读目录）如实提示，但不阻断可用皮肤
+    showSkinError(res && res.errors && res.errors.length ? res.errors.join('\n') : '');
+    renderSkinList();
+  } catch (e) {
+    skinListEl.innerHTML = '<div class="empty-tip">加载皮肤失败</div>';
+    showSkinError(String(e && e.message ? e.message : e));
+  }
+}
+
+function renderSkinList() {
+  if (!skinListEl) return;
+  if (skinCache.length === 0) {
+    skinListEl.innerHTML = '<div class="empty-tip">还没有皮肤，试试上面的「导入文件夹」</div>';
+    return;
+  }
+  skinListEl.innerHTML = skinCache
+    .map((s) => window.SETTINGS_UI.skinCardHtml(s, {
+      activeId: previewingSkinId || activeSkinId
+    }))
+    .join('');
+}
+
+function renderCurrentSkin() {
+  if (!skinCurrentEl) return;
+  if (!activeSkinId) {
+    skinCurrentEl.innerHTML = '<span class="skin-current-name">内置小猫</span>' +
+      '<span class="skin-current-badge">默认</span>';
+    return;
+  }
+  const skin = skinCache.find((s) => s.id === activeSkinId);
+  skinCurrentEl.innerHTML =
+    `<span class="skin-current-name">${window.SETTINGS_UI.escapeHtml(skin ? skin.name : activeSkinId)}</span>` +
+    `<span class="skin-current-badge">${window.SETTINGS_UI.escapeHtml(window.SETTINGS_UI.sourceLabel(skin && skin.source))}</span>`;
+}
+
+/** 试穿预览：把皮肤图片显示在预览区（不写入配置） */
+function renderPreview(skin) {
+  if (!skinPreviewStage) return;
+  if (!skin) {
+    skinPreviewStage.innerHTML = '<div class="empty-tip">点击下方皮肤卡片试穿</div>';
+    if (btnApplySkin) btnApplySkin.disabled = true;
+    return;
+  }
+  const media = window.SETTINGS_UI.previewMedia(skin);
+  if (media.kind !== 'img') {
+    skinPreviewStage.innerHTML =
+      `<div class="empty-tip">无法预览：${window.SETTINGS_UI.escapeHtml(media.reason)}</div>`;
+    if (btnApplySkin) btnApplySkin.disabled = false;
+    return;
+  }
+  skinPreviewStage.innerHTML = `<img src="${window.SETTINGS_UI.escapeHtml(media.url)}" alt="皮肤预览" />`;
+  if (btnApplySkin) btnApplySkin.disabled = false;
+}
+
+/**
+ * 试穿：只读地取一份带内联图片的皮肤数据来预览，**不写入配置**。
+ *
+ * 为什么要单独一个通道：list-skins 出于性能考虑不带内联图片（data: URL 可能几百 KB），
+ * 而 apply-skin 会写配置 —— 试穿的本意正是「还没决定，先看看」，
+ * 用它会把配置写脏（用户在设置里点了几下试穿，桌宠就跟着换了好几次）。
+ * 因此新增只读的 preview-skin。
+ */
+async function previewSkin(skinId) {
+  previewingSkinId = skinId;
+  renderSkinList();
+  const skin = skinCache.find((s) => s.id === skinId);
+  if (!skin) return;
+  if (!window.electronAPI?.previewSkin) {
+    // 旧版本没有该通道时退化为仅高亮卡片（不显示图片），不影响使用
+    renderPreview(null);
+    return;
+  }
+  try {
+    const res = await window.electronAPI.previewSkin(skinId);
+    if (res && res.success && res.skin) {
+      showSkinError('');
+      renderPreview(res.skin);
+      return;
+    }
+    showSkinError(window.SETTINGS_UI.describeErrors(res));
+    renderPreview(null);
+  } catch (e) {
+    showSkinError(String(e && e.message ? e.message : e));
+    renderPreview(null);
+  }
+}
+
+async function applySkin(skinId) {
+  if (!window.electronAPI?.applySkin) return;
+  try {
+    const res = await window.electronAPI.applySkin(skinId);
+    if (res && res.success) {
+      activeSkinId = skinId || '';
+      previewingSkinId = null;
+      showSkinError('');
+      renderSkinList();
+      renderCurrentSkin();
+      showToast('皮肤已应用，桌宠立即换装');
+    } else {
+      showSkinError(window.SETTINGS_UI.describeErrors(res));
+    }
+  } catch (e) {
+    showSkinError(String(e && e.message ? e.message : e));
+  }
+}
+
+async function importSkin(pick) {
+  if (!window.electronAPI) return;
+  try {
+    const path = await pick();
+    if (!path) return; // 用户取消
+    const res = await window.electronAPI.importSkin(path);
+    if (res && res.success) {
+      showSkinError('');
+      await loadSkins();
+      showToast('导入成功：' + (res.skin && res.skin.name ? res.skin.name : ''));
+    } else {
+      showSkinError(window.SETTINGS_UI.describeErrors(res));
+    }
+  } catch (e) {
+    showSkinError(String(e && e.message ? e.message : e));
+  }
+}
+
+if (skinListEl) {
+  skinListEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-skin-action]');
+    const card = e.target.closest('.skin-card');
+    const id = (btn && btn.dataset.skinId) || (card && card.dataset.skinId);
+    if (!id) return;
+    const action = btn ? btn.dataset.skinAction : 'preview';
+    if (action === 'preview') previewSkin(id);
+    else if (action === 'apply') applySkin(id);
+    else if (action === 'export') {
+      window.electronAPI.exportSkin(id).then((res) => {
+        if (res && res.success) showToast('已导出到：' + res.dir);
+        else if (res && !res.canceled) showSkinError(window.SETTINGS_UI.describeErrors(res));
+      }).catch((err) => showSkinError(String(err && err.message ? err.message : err)));
+    }
+    e.stopPropagation();
+  });
+}
+
+if (btnImportSkinDir) {
+  btnImportSkinDir.addEventListener('click', () =>
+    importSkin(() => window.electronAPI.selectSkinDirectory()));
+}
+if (btnImportSkinZip) {
+  btnImportSkinZip.addEventListener('click', () =>
+    importSkin(() => window.electronAPI.selectSkinZip()));
+}
+if (btnRefreshSkins) {
+  btnRefreshSkins.addEventListener('click', () => loadSkins());
+}
+if (btnApplySkin) {
+  btnApplySkin.addEventListener('click', () => {
+    if (previewingSkinId) applySkin(previewingSkinId);
+  });
+}
+if (btnRevertSkin) {
+  btnRevertSkin.addEventListener('click', () => applySkin(''));
+}
+
+async function initSkins() {
+  await loadSkins();
+  // 读回当前已应用的皮肤（可能为空 = 内置）
+  try {
+    const res = window.electronAPI?.getActiveSkin ? await window.electronAPI.getActiveSkin() : null;
+    activeSkinId = res && res.skin ? res.skin.id : '';
+  } catch (_) {
+    activeSkinId = '';
+  }
+  renderCurrentSkin();
+  renderSkinList();
+}
+
 /* ========== 初始化 ========== */
 loadSettings();
 loadGeneralSettings();
 updatePreview();
+initSkins();

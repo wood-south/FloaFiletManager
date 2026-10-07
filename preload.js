@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importSkin: (sourceDir) => ipcRenderer.invoke('import-skin', { sourceDir }),
   exportSkin: (skinId) => ipcRenderer.invoke('export-skin', { skinId }),
   applySkin: (skinId) => ipcRenderer.invoke('apply-skin', { skinId }),
+  previewSkin: (skinId) => ipcRenderer.invoke('preview-skin', { skinId }),
   getActiveSkin: () => ipcRenderer.invoke('get-active-skin'),
   /* 主进程换肤后广播（带上已内联图片的皮肤数据），
      使「设置窗口换肤 → 已开着的浮窗立刻换装」 */

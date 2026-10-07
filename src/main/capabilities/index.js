@@ -138,7 +138,7 @@ const CAPABILITIES = [
     channels: [
       'list-skins', 'import-skin', 'export-skin',
       'select-skin-directory', 'select-skin-zip',
-      'apply-skin', 'get-active-skin'
+      'apply-skin', 'get-active-skin', 'preview-skin'
     ],
     build: (deps) => ({
       userDataDir: deps.userDataDir,

@@ -284,6 +284,29 @@ function register({ userDataDir, rootDir, loadConfig, saveConfig }) {
     }
   });
 
+  /* 试穿预览：只读地返回带内联图片的皮肤数据，**不写配置**。
+     list-skins 为性能考虑不带 data: URL（可能几百 KB），
+     而 apply-skin 会写配置 —— 试穿的本意是「还没决定，先看看」。 */
+  ipcMain.handle('preview-skin', (event, payload) => {
+    try {
+      const skinId = payload && typeof payload === 'object' ? payload.skinId : null;
+      if (typeof skinId !== 'string' || !skinId) {
+        return { success: false, error: '缺少皮肤 id' };
+      }
+      if (skinId.includes('/') || skinId.includes('\\') || skinId.includes('..')) {
+        return { success: false, error: '非法的皮肤 id' };
+      }
+      const found = findSkinById(skinId, userRoot, builtinRoot);
+      if (!found) return { success: false, error: '未找到该皮肤: ' + skinId };
+      const info = store.inspectSkinDir(found.dir);
+      if (!info.ok) return { success: false, error: info.errors.join('；') };
+      return { success: true, skin: materialize(info.skin, found.dir, found.source) };
+    } catch (e) {
+      console.error('试穿皮肤失败:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
   ipcMain.handle('get-active-skin', () => {
     try {
       const cfg = readConfig();
