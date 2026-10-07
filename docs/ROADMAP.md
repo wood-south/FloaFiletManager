@@ -300,9 +300,10 @@ if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 | 3.1 | 动画状态表 + 状态机（`idle/sleep/walk/celebrate/interact/snap/drag`），优先级与一次性状态回落 | ✅ `renderer/pet/behavior.js` |
 | 3.2 | 定义 `pet.json` 皮肤包规范（`render` / `clips` / `sounds` / `colorMap`） | ✅ `docs/PET_SPEC.md` |
 | 3.3 | 皮肤校验与合并（`validatePetSkin` / `mergeClips`） | ✅ `renderer/pet/skin.js` |
-| 3.4 | 现有 SVG 猫改造为第一套内置皮肤（支持换色） | ⬜ 见下方说明 |
+| 3.4 | 现有 SVG 猫改造为第一套内置皮肤（支持换色） | ✅ `renderer/pet/colors.js` |
 | 3.5 | 把写死在元素上的无限动画改为状态类驱动 | ✅（见下） |
 | 3.6 | 补齐 `docs/ANIMATION_SPEC.md`、`docs/THEME_SPEC.md` | ⬜ 见下方说明 |
+| 3.7 | 自主行为驱动（`sleep`/`walk`/`celebrate` 的触发来源） | ✅ `renderer/pet/driver.js` |
 
 **3.5 的做法与「默认值等于现状」原则**
 
@@ -323,20 +324,62 @@ if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 | `drag` | `interaction.onDragStateChange(true)`（优先级最高，可打断一切） |
 | `snap` | `onSnapEdgeChanged` / `onDockSnapChanged` → `syncSnapState()` |
 | `interact` | `interaction.onInteract`（按下桌宠时的一次性反馈，600ms 后回落） |
-| `walk` / `sleep` / `celebrate` | **仅定义了状态与视觉，暂无驱动源**（见下） |
+| `sleep` | `renderer/pet/driver.js`：**用户**空闲超过 60s 自动入睡 |
+| `walk` | `driver.js`：空闲期间随机漫游（20~45s 一次，走 4s 后自己回 idle） |
+| `celebrate` | `driver.js`：`pet:drop-done` 且 `succeeded > 0`（上传/删除成功） |
+
+**自主行为驱动（阶段 3 收尾，已完成）**
+
+新增 `renderer/pet/driver.js`。状态机（`behavior.js`）只回答「能不能切」，
+它回答「什么时候切」，把三个此前**没有驱动源**的状态接上。
+
+设计上刻意保守，避免「桌宠变得不听话」：
+
+- **绝不高优先级抢占**：`drag` / `snap` / `interact` 期间自主行为一律让路。
+- **可整体关闭**：`disable()` 后完全没有自主变化，与接入前行为一致。
+- **用户一操作就重置计时**，并能把睡着的桌宠唤醒。
+- 时间与定时器**全部可注入**，因此「等 60 秒后入睡」在测试里是确定性断言，
+  不需要真的等一分钟。
+
+**实现过程中被测试抓出的四个真实缺陷**（都写成了注释留在代码里）：
+
+1. **`idle` 优先级 0，无法打断 `walk`(40) / `celebrate`(60)** ——
+   用 `set('idle')` 收回状态会被状态机正确拒绝，桌宠会**永远卡在 walk/celebrate**。
+   必须用 `reset()`。`sleep`(20) 唤醒同理。
+2. **漫游会把入睡计时不断推后，导致桌宠永远睡不着** ——
+   `endWalk` 重置了共用的 `lastActivityAt`，而漫游每 20~45s 一次。
+   已把「用户空闲」(`idleSince`) 与「漫游节拍」(`walkStartedAt`) 拆成两个计时起点。
+3. **`busyUntil` 判断方向写反** —— 状态还是 `walk` 时 `busyUntil` 在未来，
+   按 `now() < busyUntil` 反而判定「没在忙」而允许抢占。
+   结论：这个时间锁是多余的，状态机本身已挡住低优先级打断，已删除。
+4. **睡着后不排下一次检查 → 驱动停摆**，桌宠可能永远醒不过来（已改为低频轮询）。
+
+**配色换色（3.4，已完成）**
+
+内置 SVG 猫的 15 处颜色全部改为 `var(--cat-*, 兜底值)` 引用（兜底值 = 原硬编码颜色，
+因此不装皮肤时外观零变化），新增 `renderer/pet/colors.js` 提供：
+`CAT_PALETTE` 清单、`applyColorMap`（**只允许白名单内的变量**，
+皮肤不能往桌宠根元素塞任意 CSS 变量）、`clearColorMap`
+（逐个 `removeProperty`，不能整体清 style —— 否则会连带清掉 `--pet-cursor` 等运行时变量）。
+
+`test/pet-colors.test.js` 把「`float.html` 的变量引用 ↔ `CAT_PALETTE` ↔ `PET_SPEC.md`
+第 7 节的变量名」三者一致性纳入断言：任一不一致都表现为「换了色没效果」
+或「换回内置后颜色不对」，肉眼很难定位。
+
+**检测**：新增 `test/driver.test.js` **28 项断言**、`test/pet-colors.test.js` **23 项断言**；
+`test/skin-ipc.test.js` 新增第 8 组「自主行为接线」共 **43 项断言**。
+自检脚本 25 → **27 个**，断言 704 → **762 项**；
+`npm test` 全绿、`npm run lint` 全绿（`node --check` 72 个文件）。
 
 **明确未完成的部分（不夸大）**
 
-- **3.4 内置皮肤改造未做**：现有 SVG 猫的颜色仍写死在 SVG 属性上（`fill="#f5a623"`），
-  尚未改成 `var(--cat-*)` 引用，因此 `colorMap` 换色目前**只是规范、
-  没有实际生效**。规范第 7 节已写明换色需要「变量映射 + SVG 改用 var()」两步。
+- **3.4 内置皮肤改造已完成**（原为未完成项）：SVG 猫颜色已改为 `var(--cat-*)` 引用，
+  `colorMap` 换色**已实际生效**（见上节「配色换色」）。
 - **3.3 只做了校验与合并，没有做文件系统加载器**：`userData/pets/` 扫描、
   热切换、atlas 帧绘制属于阶段 8（商城导入导出）。当前 `skin.js` 是纯校验/合并逻辑，
   可在 Node 里完整测试，正好作为阶段 8 的第一道闸。
-- **`walk` / `sleep` / `celebrate` 无驱动源**：`celebrate` 的自然触发点是
-  「上传成功」，但那需要 `quick-upload` 能力产出事件、壳层再驱动状态 ——
-  属于跨能力的接线，按「一个阶段一个主题」的原则留给后续，避免本阶段
-  同时改动能力层与动画层。
+- **`walk` / `sleep` / `celebrate` 的驱动源已完成**（原为未完成项）：
+  `renderer/pet/driver.js` 负责入睡、漫游与庆祝，触发链路见上表。
 
 **检测**：
 - 自检脚本 10 → **12 个**，断言 245 → **317 项**
@@ -855,8 +898,8 @@ HTML 的 `class`/`script`/`link`/`id` 声明集合完全一致。
   `test/skin-ipc.test.js` 第 7 组「渲染层接线契约」）。
 - **阶段 7 剩余**：7.1b（`autoFitDockWindow` 的容器宽度变量化，与滚动/裁剪耦合）、
   7.3 磁贴放大、7.4 自动隐藏、7.6 拖拽排序。
-- **阶段 3 剩余**：SVG 猫的 `colorMap` 换色未生效（颜色仍硬编码）、
-  `walk`/`sleep`/`celebrate` 无驱动、`docs/ANIMATION_SPEC.md` / `THEME_SPEC.md` 未写。
+- **阶段 3 剩余**：仅 `docs/ANIMATION_SPEC.md` / `THEME_SPEC.md` 未写（3.6）。
+  换色（3.4）与自主行为驱动（3.7）已完成。
 
 ---
 

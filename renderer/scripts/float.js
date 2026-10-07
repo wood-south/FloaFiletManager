@@ -45,6 +45,26 @@ function applyBehaviorState(info) {
 // 初始化：显式贴上初始状态类（不能只等 onChange —— 初始状态没有「变化」事件）
 applyBehaviorState(behavior.describe());
 
+/* ========== 自主行为驱动（阶段 3 收尾） ==========
+   状态机只回答「能不能切」，driver 回答「什么时候切」：
+   - 用户长时间不操作 → sleep
+   - 空闲期间随机漫游 → walk（自己走一小段再回 idle）
+   - 上传成功等事件 → celebrate
+
+   刻意**只在用户确实空闲时**动作，且用户一操作就重置计时；
+   另外 driver 不会抢占 drag / snap / interact（用户操作永远优先）。 */
+const behaviorDriver = window.PET_DRIVER
+  ? window.PET_DRIVER.createBehaviorDriver({
+    behavior,
+    onStateChange: (name, reason) => {
+      // 便于排查"桌宠为什么自己睡了/走了"
+      console.log('[pet] 自主状态 ->', name, '(' + reason + ')');
+    }
+  })
+  : null;
+
+if (behaviorDriver) behaviorDriver.enable();
+
 /* ========== 点击穿透：透明区域允许鼠标穿透到桌面 ==========
    仲裁实现见 renderer/pet/penetration.js：以「交互原因集合」取代原先
    !menuOpen && !quitOpen && !modalActive && !isDragging 的布尔链。
@@ -204,6 +224,8 @@ function hasSnapClass() {
 // 贴边时鼠标悬停 → 弹出显示；离开 → 收回贴边
 petBody.addEventListener('mouseenter', () => {
   enableMouseCapture(); // 进入内容区域：关闭穿透，捕获鼠标
+  // 用户来了：唤醒（若在睡）并重置空闲计时
+  if (behaviorDriver) behaviorDriver.notifyActivity('hover');
   if (interaction.isDragging() || snapLock) return;
   if (hasSnapClass()) {
     wasSnapped = true;
@@ -239,6 +261,8 @@ window.addEventListener('blur', () => {
 
 // 拖动逻辑
 petBody.addEventListener('mousedown', (e) => {
+  // 用户操作：唤醒并重置空闲计时（拖拽期间 driver 也不会抢占，见 driver.js）
+  if (behaviorDriver) behaviorDriver.notifyActivity('pointer');
   interaction.onPointerDown(e);
 });
 
@@ -405,6 +429,16 @@ window.deskPetRegistry.on('capability:mode', (payload) => {
 
 window.deskPet = deskPet;
 
+/* 有实际成果时庆祝一下（上传成功 / 删除成功）。
+   能力只报告事实（pet:drop-done），表现由壳层决定 ——
+   这样以后新增能力不必各自去碰状态机。
+   位置必须在 deskPet 声明之后：提到前面会踩暂时性死区。 */
+deskPet.on('pet:drop-done', (info) => {
+  if (behaviorDriver && info && info.succeeded > 0) {
+    behaviorDriver.celebrate(info.action === 'recycle' ? 'recycle-ok' : 'upload-ok');
+  }
+});
+
 // 贴边方向变化时移动桌宠位置
 window.electronAPI.onSnapEdgeChanged((edges) => {
   petBody.classList.remove('snap-left', 'snap-right', 'snap-top', 'snap-bottom');
@@ -505,6 +539,9 @@ function applySvgSkin(skin) {
 }
 
 function applySkinToShell(skin) {
+  // 配色先处理：无论哪个 kind，colorMap 都要生效（阶段 3.4）
+  applySkinColors(skin);
+
   if (!skinRenderer) return;
   // 先按 sprite 尝试；不成立时再考虑 svg；都没有则回到内置外观
   const frameMode = skinRenderer.apply(skin);
@@ -516,6 +553,21 @@ function applySkinToShell(skin) {
   if (oldImg) oldImg.remove();
   if (petCanvas) petCanvas.hidden = true;
   if (petSvg) petSvg.hidden = false;
+}
+
+/** 应用皮肤的 colorMap 换色；无皮肤或换回内置时清掉，恢复内置配色 */
+function applySkinColors(skin) {
+  if (!window.PET_COLORS || !petBody) return;
+  const colorMap = skin && skin.render && skin.render.svg && skin.render.svg.colorMap;
+  if (colorMap && Object.keys(colorMap).length > 0) {
+    const res = window.PET_COLORS.applyColorMap(petBody, colorMap);
+    if (res.ignored.length > 0) {
+      // 皮肤想改不在白名单里的变量：忽略并留痕，便于排查"换了色没效果"
+      console.warn('[pet] colorMap 忽略了未知变量:', res.ignored.join(', '));
+    }
+    return;
+  }
+  window.PET_COLORS.clearColorMap(petBody);
 }
 
 if (skinRenderer && window.PET_SKIN_RENDER) {

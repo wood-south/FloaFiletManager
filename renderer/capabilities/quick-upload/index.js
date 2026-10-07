@@ -74,8 +74,10 @@
     }
     if (successCount > 0) {
       pet.toast('已删除 ' + successCount + ' 个文件到回收站');
+      pet.emit('pet:drop-done', { action: 'recycle', succeeded: successCount, total: paths.length });
     } else {
       pet.toast('删除失败');
+      pet.emit('pet:drop-done', { action: 'recycle', succeeded: 0, total: paths.length });
     }
   }
 
@@ -121,8 +123,13 @@
 
     if (successCount > 0) {
       pet.toast('成功上传 ' + successCount + ' 个文件');
+      /* 通知壳层「这次拖放有实际成果」，由壳层决定怎么表现（桌宠庆祝）。
+         刻意不让能力直接操作动画状态：能力只报告事实，表现归壳层 ——
+         否则每加一个能力都要各自去改状态机。 */
+      pet.emit('pet:drop-done', { action: 'upload', succeeded: successCount, total: paths.length });
     } else {
       pet.toast('上传取消');
+      pet.emit('pet:drop-done', { action: 'upload', succeeded: 0, total: paths.length });
     }
   }
 

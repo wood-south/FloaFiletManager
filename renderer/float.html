@@ -24,36 +24,62 @@
             <g class="pet-head">
               <path
                 d="M25 45 Q25 20 50 20 Q75 20 75 45 L75 65 Q75 80 50 80 Q25 80 25 65 Z"
-                fill="#f5a623"
+                fill="var(--cat-fur, #f5a623)"
               />
               <path
                 d="M28 38 Q28 25 50 25 Q72 25 72 38"
                 fill="none"
-                stroke="#e8941a"
+                stroke="var(--cat-stripe, #e8941a)"
                 stroke-width="2"
               />
-              <polygon class="ear ear-left" points="30,28 25,10 40,22" fill="#f5a623" />
-              <polygon class="ear-inner ear-left-inner" points="31,26 29,15 37,23" fill="#f8c774" />
-              <polygon class="ear ear-right" points="70,28 75,10 60,22" fill="#f5a623" />
+              <polygon
+                class="ear ear-left"
+                points="30,28 25,10 40,22"
+                fill="var(--cat-fur, #f5a623)"
+              />
+              <polygon
+                class="ear-inner ear-left-inner"
+                points="31,26 29,15 37,23"
+                fill="var(--cat-ear, #f8c774)"
+              />
+              <polygon
+                class="ear ear-right"
+                points="70,28 75,10 60,22"
+                fill="var(--cat-fur, #f5a623)"
+              />
               <polygon
                 class="ear-inner ear-right-inner"
                 points="69,26 71,15 63,23"
-                fill="#f8c774"
+                fill="var(--cat-ear, #f8c774)"
               />
               <g class="eyes">
                 <ellipse class="eye eye-left" cx="38" cy="48" rx="6" ry="7" fill="white" />
-                <ellipse class="pupil pupil-left" cx="38" cy="49" rx="3" ry="4" fill="#333" />
+                <ellipse
+                  class="pupil pupil-left"
+                  cx="38"
+                  cy="49"
+                  rx="3"
+                  ry="4"
+                  fill="var(--cat-ink, #333)"
+                />
                 <circle class="eye-shine" cx="39.5" cy="47.5" r="1.2" fill="white" />
                 <ellipse class="eye eye-right" cx="62" cy="48" rx="6" ry="7" fill="white" />
-                <ellipse class="pupil pupil-right" cx="62" cy="49" rx="3" ry="4" fill="#333" />
+                <ellipse
+                  class="pupil pupil-right"
+                  cx="62"
+                  cy="49"
+                  rx="3"
+                  ry="4"
+                  fill="var(--cat-ink, #333)"
+                />
                 <circle class="eye-shine" cx="63.5" cy="47.5" r="1.2" fill="white" />
               </g>
-              <ellipse class="nose" cx="50" cy="58" rx="4" ry="3" fill="#e85d5d" />
+              <ellipse class="nose" cx="50" cy="58" rx="4" ry="3" fill="var(--cat-nose, #e85d5d)" />
               <path
                 class="mouth"
                 d="M50 61 Q45 66 42 63 M50 61 Q55 66 58 63"
                 fill="none"
-                stroke="#333"
+                stroke="var(--cat-ink, #333)"
                 stroke-width="1.5"
                 stroke-linecap="round"
               />
@@ -63,7 +89,7 @@
                 cy="60"
                 rx="5"
                 ry="3"
-                fill="#ffb6b6"
+                fill="var(--cat-cheek, #ffb6b6)"
                 opacity="0.6"
               />
               <ellipse
@@ -72,23 +98,23 @@
                 cy="60"
                 rx="5"
                 ry="3"
-                fill="#ffb6b6"
+                fill="var(--cat-cheek, #ffb6b6)"
                 opacity="0.6"
               />
               <path
                 class="whisker"
                 d="M25 55 L15 53 M25 60 L15 60 M25 65 L15 67 M75 55 L85 53 M75 60 L85 60 M75 65 L85 67"
                 fill="none"
-                stroke="#d4903a"
+                stroke="var(--cat-whisker, #d4903a)"
                 stroke-width="1"
                 stroke-linecap="round"
               />
             </g>
             <g class="paw paw-left">
-              <ellipse cx="35" cy="78" rx="6" ry="4" fill="#f5a623" />
+              <ellipse cx="35" cy="78" rx="6" ry="4" fill="var(--cat-fur, #f5a623)" />
             </g>
             <g class="paw paw-right">
-              <ellipse cx="65" cy="78" rx="6" ry="4" fill="#f5a623" />
+              <ellipse cx="65" cy="78" rx="6" ry="4" fill="var(--cat-fur, #f5a623)" />
             </g>
           </svg>
         </div>
@@ -172,7 +198,9 @@
     <script src="pet/interaction.js"></script>
     <script src="pet/anchor.js"></script>
     <script src="pet/behavior.js"></script>
+    <script src="pet/driver.js"></script>
     <script src="pet/frames.js"></script>
+    <script src="pet/colors.js"></script>
     <script src="pet/skin-render.js"></script>
     <script src="scripts/capabilities.js"></script>
     <script src="scripts/float.js"></script>

@@ -309,6 +309,51 @@ console.log('\n[7] 渲染层接线契约（通道 ↔ preload ↔ 浮窗壳层�
     assert.ok(declIdx > 0, '缺少顶部声明');
     assert.ok(declIdx < useIdx, '声明必须在首次使用之前');
   });
+
+  ok('浮窗加载了 driver 与 colors，且顺序在 float.js 之前', () => {
+    ['pet/driver.js', 'pet/colors.js'].forEach((f) => {
+      assert.ok(floatHtml.includes(f), 'float.html 缺少 ' + f);
+      assert.ok(floatHtml.indexOf(f) < floatHtml.indexOf('scripts/float.js'),
+        f + ' 必须在 float.js 之前加载');
+    });
+  });
+  ok('驱动在 float.js 里被创建并启用', () => {
+    assert.ok(floatJs.includes('PET_DRIVER.createBehaviorDriver'), '未创建驱动');
+    assert.ok(/behaviorDriver\.enable\(\)/.test(floatJs), '未启用驱动');
+  });
+}
+
+console.log('\n[8] 自主行为接线（阶段 3 收尾：sleep/walk/celebrate 的驱动来源）');
+{
+  const floatJs = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  const quickUpload = fs.readFileSync(
+    path.join(root, 'renderer', 'capabilities', 'quick-upload', 'index.js'), 'utf8');
+
+  ok('用户交互会通知活动（唤醒 + 重置空闲计时）', () => {
+    const calls = (floatJs.match(/behaviorDriver\.notifyActivity\(/g) || []).length;
+    assert.ok(calls >= 2, '至少 hover 与 pointer 两类交互要通知，实际 ' + calls + ' 处');
+  });
+  ok('上传/删除成功会触发庆祝', () => {
+    assert.ok(floatJs.includes("deskPet.on('pet:drop-done'"), '壳层未订阅 pet:drop-done');
+    assert.ok(/behaviorDriver\.celebrate\(/.test(floatJs), '未调用 celebrate');
+  });
+  ok('能力只报告事实（pet:drop-done），不直接操作动画状态', () => {
+    assert.ok(quickUpload.includes("pet.emit('pet:drop-done'"), '能力未上报结果');
+    // 能力不应自己去碰状态机：表现归壳层，否则每加一个能力都要改状态机
+    assert.ok(!/PET_BEHAVIOR|behavior\.set\(/.test(quickUpload),
+      '能力不应直接操作状态机');
+  });
+  ok('celebrate 订阅在 deskPet 声明之后（避免 TDZ）', () => {
+    const declIdx = floatJs.indexOf('const deskPet = {');
+    const useIdx = floatJs.indexOf("deskPet.on('pet:drop-done'");
+    assert.ok(declIdx > 0 && useIdx > declIdx,
+      'deskPet 声明位置 ' + declIdx + '，订阅位置 ' + useIdx + '（订阅必须更晚）');
+  });
+  ok('驱动不会被注册为能力（它属于壳层，不是可插拔能力）', () => {
+    const capsDir = path.join(root, 'renderer', 'capabilities');
+    const names = fs.readdirSync(capsDir);
+    assert.ok(!names.includes('driver'), 'driver 不应出现在 capabilities/ 下');
+  });
 }
 
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
