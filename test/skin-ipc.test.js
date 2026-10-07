@@ -501,7 +501,10 @@ console.log('\n[9] 显隐切换只有一个入口（防「两只猫叠加」）'
     // 必须去掉注释再断言：注释里正好写了 `behavior.set('idle') 会被拒绝`
     // 作为说明，直接匹配会误判成"代码里用了 set('idle')"
     const code = body.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-    assert.ok(/behavior\.reset\(\)/.test(code), '未调用 reset()，会停在最后一帧');
+    // 一次性状态回落必须走 leaveToIdle()（内部是 reset）：
+    // idle 优先级 0，直接 set('idle') 会被状态机拒绝，桌宠会停在最后一帧。
+    assert.ok(/leaveToIdle\(\)/.test(code),
+      '未调用 leaveToIdle()，会停在最后一帧');
     assert.ok(!/behavior\.set\(\s*'idle'\s*\)/.test(code),
       "不能写 behavior.set('idle')：idle 优先级 0，会被状态机拒绝");
   });

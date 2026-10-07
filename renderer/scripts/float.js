@@ -33,6 +33,25 @@ const behavior = window.PET_BEHAVIOR.createBehavior({
 /** 上一次贴上的状态类，避免残留多个 state-* 导致动画互相打架 */
 let appliedStateClass = null;
 
+/** 「回到常态」的统一入口。
+ *
+ *  **必须用 reset() 而不是 set('idle')**：idle 的优先级是 0，
+ *  而 drag(100) / snap(90) / interact(70) / celebrate(60) / walk(40) / sleep(20)
+ *  都比它高。状态机不允许低优先级打断高优先级，所以 set('idle') 会被**正确拒绝**。
+ *
+ *  这个坑在项目里已经踩到第四次：
+ *    - driver.js 的 walk/celebrate 收起
+ *    - driver.js 从 sleep 唤醒
+ *    - skin-render 的 onFinished 一次性状态回落
+ *    - 本次：拖动松手后回 idle（导致桌宠**永久卡在 drag**，
+ *      而 walk/sleep 优先级更低全被拒 → 表现为"只有一种动画"）
+ *  所以收敛成一个函数，避免以后再各写各的。 */
+function leaveToIdle() {
+  const cur = behavior.get();
+  if (cur === 'idle') return false;
+  return behavior.reset();
+}
+
 function applyBehaviorState(info) {
   if (!petBody) return;
   if (appliedStateClass) petBody.classList.remove(appliedStateClass);
@@ -196,8 +215,10 @@ const interaction = window.createInteraction({
     } else {
       penetration.release(PEN_REASON.drag);
       petBody.classList.remove('dragging');
-      // 松手后回落到 idle，随后由贴边/吸附事件按需切到 snap
-      behavior.set('idle');
+      // 松手后回落到 idle，随后由贴边/吸附事件按需切到 snap。
+      // 注意用 leaveToIdle()：drag 优先级 100，set('idle') 会被拒绝，
+      // 桌宠会**永久卡在 drag**（实测：日志里进了 drag 之后再无任何状态变化）。
+      leaveToIdle();
       syncSnapState();
     }
   },
@@ -483,7 +504,13 @@ function syncSnapState() {
     petBody.classList.contains('dock-bottom') ||
     petBody.classList.contains('dock-left') ||
     petBody.classList.contains('dock-right');
-  behavior.set(snapped ? 'snap' : 'idle');
+  if (snapped) {
+    behavior.set('snap');
+    return;
+  }
+  // 取消吸附也要「回到常态」：snap 优先级 90，set('idle') 同样会被拒绝，
+  // 不这样写会卡在 snap（与拖动松手卡 drag 是同一类问题）
+  leaveToIdle();
 }
 
 /* ========== 皮肤与动画帧渲染（阶段 8.6） ==========
@@ -653,14 +680,10 @@ if (skinRenderer && window.PET_SKIN_RENDER) {
   window.PET_SKIN_RENDER.startLoop(skinRenderer, {
     onTick: () => syncPetVisuals(),
     onFinished: () => {
-      // 一次性状态（celebrate / interact）播完，让状态机回落，避免停在最后一帧。
-      // idle 优先级最低、打断不了它们，所以这里必须走 reset() 语义 ——
-      // behavior.set('idle') 会被状态机正确拒绝。
-      if (typeof behavior !== 'undefined' && behavior &&
-        typeof behavior.reset === 'function') {
-        const cur = behavior.get();
-        if (cur === 'celebrate' || cur === 'interact') behavior.reset();
-      }
+      // 一次性状态（celebrate / interact）播完要让状态机回落，否则停在最后一帧。
+      // 走 leaveToIdle()（内部是 reset）而不是 set('idle') —— 后者会被状态机拒绝。
+      const cur = behavior.get();
+      if (cur === 'celebrate' || cur === 'interact') leaveToIdle();
     }
   });
 
