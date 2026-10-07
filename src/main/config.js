@@ -56,6 +56,15 @@ function loadConfig() {
 function migrateConfig(config) {
   let changed = false;
 
+  // 持久化窗口状态
+  if (config.dockVisible === undefined) { config.dockVisible = true; changed = true; }
+  if (config.floatAlwaysOnTop === undefined) { config.floatAlwaysOnTop = true; changed = true; }
+  if (config.dockAlwaysOnTop === undefined) { config.dockAlwaysOnTop = true; changed = true; }
+  if (config.dockX === undefined) { config.dockX = null; changed = true; }
+  if (config.dockBottom === undefined) { config.dockBottom = null; changed = true; }
+  // 旧的 dockY（顶部位置）已废弃，改用 dockBottom（底部位置）作为稳定锚点
+  if (config.dockY !== undefined) { delete config.dockY; changed = true; }
+
   if (!config.partitions || !Array.isArray(config.partitions)) {
     config.partitions = [];
     changed = true;

@@ -2,20 +2,19 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
-  <title>Icon Helper</title>
+  <title>Icon Helper（已废弃）</title>
 </head>
 <body>
-  <script>
-    window.electronAPI.onGetFileIcon((requestId, filePath, isDirectory) => {
-      window.electronAPI.getFileIconNative(filePath, isDirectory)
-        .then(dataUrl => {
-          window.electronAPI.returnFileIcon(requestId, dataUrl);
-        })
-        .catch(() => {
-          window.electronAPI.returnFileIcon(requestId, null);
-        });
-    });
-  </script>
+  <!--
+    此页面与 renderer/icon-helper-preload.js 已废弃，不再被任何窗口加载。
+
+    原因：图标提取链路已统一到主进程 src/main/ipc/icons.js 的 'get-file-icon'
+    通道（resolveFileIcon：快捷方式/.url 解析 → PowerShell + SHGetFileInfo →
+    Electron app.getFileIcon），带缓存与增量通知；原先的“隐藏辅助窗口”属于
+    重复且无缓存的第二条实现，且没有任何调用方。
+
+    保留空文件仅为避免删除操作（受工作区目录权限限制，见项目根 .gitignore
+    同级说明）。可以安全删除，不会影响任何功能。
+  -->
 </body>
 </html>

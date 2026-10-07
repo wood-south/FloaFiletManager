@@ -1,17 +1,10 @@
-const { contextBridge, ipcRenderer } = require('electron');
-
-let pendingIcons = new Map();
-
-contextBridge.exposeInMainWorld('electronAPI', {
-  onGetFileIcon: (callback) => {
-    ipcRenderer.on('helper-get-file-icon', (event, requestId, filePath, isDirectory) => {
-      callback(requestId, filePath, isDirectory);
-    });
-  },
-  getFileIconNative: (filePath, isDirectory) => {
-    return ipcRenderer.invoke('helper-native-get-file-icon', filePath, isDirectory);
-  },
-  returnFileIcon: (requestId, dataUrl) => {
-    ipcRenderer.send('helper-return-file-icon', requestId, dataUrl);
-  }
-});
+// 【已废弃】图标辅助窗口的 preload，不再被任何窗口加载。
+//
+// 图标提取链路已统一到主进程 src/main/ipc/icons.js 的 'get-file-icon' 通道
+// （resolveFileIcon：快捷方式/.url 解析 → PowerShell + SHGetFileInfo →
+// Electron app.getFileIcon），带图标缓存与 'icon-updated' 增量通知。
+// 原先的隐藏辅助窗口（helper-get-file-icon / helper-native-get-file-icon /
+// helper-return-file-icon）是一套重复且无缓存的实现，且没有任何调用方。
+//
+// 保留空文件仅为避免删除操作（受工作区目录权限限制）。
+// 可以安全删除，不会影响任何功能。
