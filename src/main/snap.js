@@ -12,23 +12,21 @@
  */
 
 /**
- * 计算吸附后的窗口位置（搜索模式）。
+ * 只判定吸附方向（不计算最终位置）。
+ *
+ * 为什么要拆出来：视觉间隙是**按方向**取值的（上下有额外校正），
+ * 而"先算位置再判定"的旧流程只能在方向未知时用基础间隙定位，
+ * 导致搜索建立的关系与 maintain 之后的位置不一致（表现为吸附瞬间差几像素）。
+ * 现在改为：先判方向 → 再按该方向的间隙计算位置。
+ *
+ * @returns {{side:string, gap:number}|null}
  */
-function computeDockSnap({
-  floatBounds,
-  anchor,
-  panelBounds,
-  snapDistance = 60,
-  visualGap = 0,
-  minOverlap = 12
-}) {
+function findSnapSide({ floatBounds, anchor, panelBounds, snapDistance = 60, minOverlap = 12 }) {
   if (!floatBounds || !panelBounds || !anchor) return null;
   if (!anchor.width || !anchor.height) return null;
 
-  const fx = floatBounds.x;
-  const fy = floatBounds.y;
-  const vx = fx + anchor.left;
-  const vy = fy + anchor.top;
+  const vx = floatBounds.x + anchor.left;
+  const vy = floatBounds.y + anchor.top;
   const vw = anchor.width;
   const vh = anchor.height;
 
@@ -36,18 +34,13 @@ function computeDockSnap({
   const yOverlap = Math.min(vy + vh, panelBounds.y + panelBounds.height) - Math.max(vy, panelBounds.y);
 
   const candidates = [];
-
   if (xOverlap >= minOverlap) {
-    const gapTop = panelBounds.y - (vy + vh);
-    candidates.push({ side: 'top', gap: gapTop });
-    const gapBottom = vy - (panelBounds.y + panelBounds.height);
-    candidates.push({ side: 'bottom', gap: gapBottom });
+    candidates.push({ side: 'top', gap: panelBounds.y - (vy + vh) });
+    candidates.push({ side: 'bottom', gap: vy - (panelBounds.y + panelBounds.height) });
   }
   if (yOverlap >= minOverlap) {
-    const gapLeft = panelBounds.x - (vx + vw);
-    candidates.push({ side: 'left', gap: gapLeft });
-    const gapRight = vx - (panelBounds.x + panelBounds.width);
-    candidates.push({ side: 'right', gap: gapRight });
+    candidates.push({ side: 'left', gap: panelBounds.x - (vx + vw) });
+    candidates.push({ side: 'right', gap: vx - (panelBounds.x + panelBounds.width) });
   }
 
   let best = null;
@@ -56,17 +49,34 @@ function computeDockSnap({
     if (Math.abs(c.gap) > snapDistance) continue;
     if (!best || Math.abs(c.gap) < Math.abs(best.gap)) best = c;
   }
+  return best;
+}
+
+/**
+ * 计算吸附后的窗口位置（搜索模式）。
+ */
+function computeDockSnap({
+  floatBounds,
+  anchor,
+  panelBounds,
+  snapDistance = 60,
+  visualGap = 0,
+  visualGapForSide: gapForSide = null,
+  minOverlap = 12
+}) {
+  const best = findSnapSide({ floatBounds, anchor, panelBounds, snapDistance, minOverlap });
   if (!best) return null;
 
+  // 起吸附时机要早于方向判定完成，此处按**该方向**的间隙定位，
+  // 保证与后续 maintain 使用同一数值（否则吸附瞬间会差几像素）
+  const gap = typeof gapForSide === 'function' ? gapForSide(best.side) : visualGap;
   const target = positionForSide({
     side: best.side,
     floatBounds,
     anchor,
     panelBounds,
-    visualGap
+    visualGap: gap
   });
-  // 统一取整：非吸附轴会原样沿用 floatBounds 的坐标，若不取整会出现半像素抖动，
-  // 且与 maintain 路径（positionForSide 内已取整）结果不一致
   return {
     side: best.side,
     x: Math.round(target.x),
@@ -154,6 +164,7 @@ function decide({
   mode = 'maintain',
   snapDistance = 60,
   visualGap = 0,
+  gapsForSide = null,
   settleTolerance = 2
 }) {
   // 面板不可用：仅在保持模式下解除关系（搜索模式下无事可做）
@@ -167,7 +178,13 @@ function decide({
 
   if (mode === 'search') {
     const result = computeDockSnap({
-      floatBounds, anchor, panelBounds, snapDistance, visualGap
+      floatBounds,
+      anchor,
+      panelBounds,
+      snapDistance,
+      visualGap,
+      // 方向确定后按该方向的间隙定位（上下有额外校正）
+      visualGapForSide: (side) => (typeof gapsForSide === 'function' ? gapsForSide(side) : visualGap)
     });
     if (!result) {
       // 搜索模式找不到吸附：清除已有关系（用户已拖离 Dock）
@@ -188,8 +205,9 @@ function decide({
 
   // maintain：必须已有关系，沿当前边重算（不重新挑方向，避免被吸到另一侧）
   if (!relation) return { action: 'none' };
+  const maintainGap = typeof gapsForSide === 'function' ? gapsForSide(relation.side) : visualGap;
   const target = positionForSide({
-    side: relation.side, floatBounds, anchor, panelBounds, visualGap, relation
+    side: relation.side, floatBounds, anchor, panelBounds, visualGap: maintainGap, relation
   });
   if (!target) return { action: 'none' };
 
@@ -209,9 +227,32 @@ function decide({
   };
 }
 
+/**
+ * 按吸附方向返回实际使用的视觉间隙。
+ *
+ * 为什么需要按方向区分：视觉框由各图元**包围盒**并集得到，而椭圆类图元（爪子）
+ * 的包围盒是外切的，比可见形状大；上下两端参与并集的图元不同
+ * （上方是耳尖/头顶，下方是爪子外切盒），误差不相等，只用一个常量会导致
+ * 「一侧覆盖边框、另一侧留缝」。左右方向经实测无需校正。
+ *
+ * @param {string} side
+ * @param {object} [gaps]
+ * @param {number} [gaps.base] 基础间隙
+ * @param {number} [gaps.top] 上方额外校正（正=远离面板）
+ * @param {number} [gaps.bottom] 下方额外校正（正=远离面板）
+ */
+function visualGapForSide(side, gaps = {}) {
+  const base = gaps.base ?? 0;
+  if (side === 'top') return base + (gaps.top ?? 0);
+  if (side === 'bottom') return base + (gaps.bottom ?? 0);
+  return base;
+}
+
 module.exports = {
   computeDockSnap,
+  findSnapSide,
   computeSnapRelation,
   positionForSide,
+  visualGapForSide,
   decide
 };

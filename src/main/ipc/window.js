@@ -1,5 +1,5 @@
 const { ipcMain, shell, BrowserWindow } = require('electron');
-const { decide } = require('../snap');
+const { decide, visualGapForSide } = require('../snap');
 
 let savedSnapEdges = null;
 let savedFloatBounds = null;
@@ -15,9 +15,23 @@ let petVisualAnchor = null;
 // 早期取值 60，导致松手时只要还在 60px 内就被重新吸回，表现为"吸附后拖不动、会弹回"。
 const SNAP_DISTANCE = 26;
 // 吸附后宠物视觉边框与面板之间的间隙。
-// 取 -2 而非 0：视觉框对应"猫本体"边界，而阴影顶边仍比爪子底高约 2.7px，
-// 留 0 会看到一条细缝；-2 让爪子与面板轻微相接（视觉贴合）。
+// 取 -2：视觉框由各图元**包围盒**并集得到，椭圆类图元（爪子）的包围盒是外切的，
+// 比可见形状大约 2px，用 -2 抵消。
 const SNAP_VISUAL_GAP = -2;
+// 垂直方向的额外校正（正数=远离面板，负数=更贴近）。
+// 单独拆出来是因为上下两端参与并集的图元不同（上方是耳尖/头顶，下方是爪子外切盒），
+// "包围盒 vs 可见形状"的误差不相等；左右方向实测已贴合，无需校正。
+const SNAP_VERTICAL_GAP_TOP = 3;
+const SNAP_VERTICAL_GAP_BOTTOM = -4;
+
+/** 按方向返回实际使用的视觉间隙（公式在 snap.js，与测试共用，避免分叉） */
+function visualGapFor(side) {
+  return visualGapForSide(side, {
+    base: SNAP_VISUAL_GAP,
+    top: SNAP_VERTICAL_GAP_TOP,
+    bottom: SNAP_VERTICAL_GAP_BOTTOM
+  });
+}
 // 用户正在手动拖动浮窗：这段时间内不得自动吸附/回吸
 let petDragging = false;
 // 排查吸附问题时设置 DSH_DEBUG_SNAP=1 打开日志（输出到终端）
@@ -337,7 +351,9 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
       relation: floatSnapToDock,
       mode: 'search',
       snapDistance: (opts && opts.snapDistance) || SNAP_DISTANCE,
-      visualGap: SNAP_VISUAL_GAP
+      // 基础间隙（方向判定用）＋ 按方向取值的间隙函数（定位用）
+      visualGap: SNAP_VISUAL_GAP,
+      gapsForSide: visualGapFor
     });
 
     if (decision.action === 'snap') {
@@ -393,6 +409,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
       relation: floatSnapToDock,
       mode: 'maintain',
       visualGap: SNAP_VISUAL_GAP,
+      gapsForSide: visualGapFor,
       settleTolerance: SNAP_SETTLE_TOLERANCE
     });
 

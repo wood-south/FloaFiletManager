@@ -12,8 +12,11 @@
      window.js  searchDockSnap / maintainDockSnap → decide(mode) */
 
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
-const { decide, positionForSide } = require(path.join(__dirname, '..', 'src', 'main', 'snap.js'));
+const { decide, positionForSide, visualGapForSide } = require(
+  path.join(__dirname, '..', 'src', 'main', 'snap.js')
+);
 
 let pass = 0;
 function ok(name, fn) {
@@ -29,6 +32,29 @@ const WIN = 160;
 //   再按阴影纵向半径（ry=5 → 2.25px）四边等量内缩 → 58.5 × 72.0，起点 (50.25, 40.25)
 //   取整后如下（左右下上也一并内缩，因为阴影包围盒四向都超出猫本体）
 const ANCHOR = { left: 50, top: 40, width: 59, height: 72 };
+/**
+ * 读取生产代码中的吸附常量，避免测试与实现各写一份（本文件已多次因硬编码失配）。
+ * 从 src/main/ipc/window.js 里解析 SNAP_VISUAL_GAP 与垂直方向的额外校正。
+ */
+const WINDOW_SRC = fs.readFileSync(
+  path.join(__dirname, '..', 'src', 'main', 'ipc', 'window.js'), 'utf8'
+);
+function readConst(name) {
+  const m = WINDOW_SRC.match(new RegExp('const ' + name + ' = (-?\\d+)'));
+  assert.ok(m, '未能在 window.js 中找到常量 ' + name);
+  return Number(m[1]);
+}
+const PROD_SNAP_DISTANCE = readConst('SNAP_DISTANCE');
+const PROD_GAPS = {
+  base: readConst('SNAP_VISUAL_GAP'),
+  top: readConst('SNAP_VERTICAL_GAP_TOP'),
+  bottom: readConst('SNAP_VERTICAL_GAP_BOTTOM')
+};
+const PROD_VISUAL_GAP = PROD_GAPS.base;
+// 直接复用 snap.js 的公式，与生产同源（不再在测试里重写一遍公式）
+function prodGapFor(side) {
+  return visualGapForSide(side, PROD_GAPS);
+}
 
 /**
  * 按「希望宠物视觉框与面板留出多少间隙」构造浮窗位置。
@@ -67,9 +93,12 @@ function createSim({ panel = { x: 400, y: 900, width: 1000, height: 64 }, float 
     anchor: null,
     visualGap: 0,
     // 与生产代码 src/main/ipc/window.js 的 SNAP_DISTANCE 保持一致
-    snapDistance: 26,
-    // 与生产代码保持一致：视觉框已排除地面阴影，留 -2 让爪子与面板轻微相接
-    visualGap: -2,
+    snapDistance: PROD_SNAP_DISTANCE,
+    // 与生产一致：间隙按方向取值（上下有额外校正）
+    visualGap: PROD_VISUAL_GAP,
+    gapFor(side) {
+      return prodGapFor(side);
+    },
     // 已上报过锚点
     // 忠实映射生产代码：report-pet-anchor 里「有则 maintain、无则 search」
     reportAnchor(anchor = ANCHOR) {
@@ -94,13 +123,16 @@ function createSim({ panel = { x: 400, y: 900, width: 1000, height: 64 }, float 
     },
     _evaluate(mode) {
       if (mode) this.mode = mode;
+      const effectiveMode = this.mode || 'maintain';
+      // 与生产一致：间隙按方向取值；决定方向前未知 side 时用默认值
       const d = decide({
         floatBounds: this.float,
         anchor: this.anchor,
         panelBounds: this.panel,
         relation: this.relation,
-        mode: this.mode || 'maintain',
+        mode: effectiveMode,
         visualGap: this.visualGap,
+        gapsForSide: (side) => this.gapFor(side),
         snapDistance: this.snapDistance
       });
       if (d.action === 'snap') {
@@ -153,7 +185,7 @@ ok('锚点上报后才吸附，且间隙为 0', () => {
   sim.reportAnchor();           // 上报触发搜索
   assert.ok(sim.relation, '锚点上报后仍未吸附');
   assert.strictEqual(sim.relation.side, 'top');
-  assert.strictEqual(sim.gapTo('top'), sim.visualGap, '宠物视觉下沿未贴合面板上沿');
+  assert.strictEqual(sim.gapTo('top'), sim.gapFor('top'), '宠物视觉下沿未贴合面板上沿');
 });
 
 console.log('\n[2] 四个方向的吸附间隙都必须是 0');
@@ -167,7 +199,7 @@ console.log('\n[2] 四个方向的吸附间隙都必须是 0');
     sim.reportAnchor();
     assert.ok(sim.relation, '未吸附');
     assert.strictEqual(sim.relation.side, side);
-    assert.strictEqual(sim.gapTo(side), sim.visualGap);
+    assert.strictEqual(sim.gapTo(side), sim.gapFor(side));
   });
 });
 
@@ -175,24 +207,24 @@ console.log('\n[3] 移动 Dock 时桌宠跟随（这是用户反馈的核心问�
 ok('横向移动 Dock 200px 后仍紧贴', () => {
   const sim = createSim({ float: floatFor('top') });
   sim.reportAnchor();
-  assert.strictEqual(sim.gapTo('top'), sim.visualGap);
+  assert.strictEqual(sim.gapTo('top'), sim.gapFor('top'));
   const relX = sim.relation.offsetX;
   sim.moveDock(200, 0);
-  assert.strictEqual(sim.gapTo('top'), sim.visualGap, '横向移动后出现间隙');
+  assert.strictEqual(sim.gapTo('top'), sim.gapFor('top'), '横向移动后出现间隙');
   assert.strictEqual(sim.float.x - sim.panel.x, relX, '浮窗未跟随横向位移');
 });
 ok('纵向移动 Dock 100px 后仍紧贴', () => {
   const sim = createSim({ float: floatFor('top') });
   sim.reportAnchor();
   sim.moveDock(0, -100);
-  assert.strictEqual(sim.gapTo('top'), sim.visualGap, '纵向移动后出现间隙');
+  assert.strictEqual(sim.gapTo('top'), sim.gapFor('top'), '纵向移动后出现间隙');
   // 期望值由 positionForSide 推导，避免手算与硬编码（本文件已多次因此误报）
   const expected = positionForSide({
     side: 'top',
     floatBounds: sim.float,
     anchor: ANCHOR,
     panelBounds: sim.panel,
-    visualGap: sim.visualGap,
+    visualGap: sim.gapFor('top'),
     relation: sim.relation
   });
   assert.strictEqual(sim.float.y, expected.y, '非吸附轴外的坐标与公式不一致');
@@ -202,7 +234,7 @@ ok('连续移动 10 次不累积误差', () => {
   sim.reportAnchor();
   for (let i = 0; i < 10; i++) {
     sim.moveDock(7, -5);
-    assert.strictEqual(sim.gapTo('top'), sim.visualGap, '第 ' + (i + 1) + ' 次移动后出现间隙');
+    assert.strictEqual(sim.gapTo('top'), sim.gapFor('top'), '第 ' + (i + 1) + ' 次移动后出现间隙');
   }
 });
 ok('横向移动后浮窗 x 偏移与面板一致（不漂移）', () => {
@@ -239,7 +271,7 @@ ok('面板移动 10px（超过容差）时浮窗跟随', () => {
   const beforeX = sim.float.x;
   sim.moveDock(10, 0);
   assert.strictEqual(sim.float.x, beforeX + 10);
-  assert.strictEqual(sim.gapTo('top'), sim.visualGap);
+  assert.strictEqual(sim.gapTo('top'), sim.gapFor('top'));
 });
 
 console.log('\n[6] 面板尺寸变化后重新贴合');
@@ -247,7 +279,7 @@ ok('面板变高后仍有 0 间隙', () => {
   const sim = createSim({ float: floatFor('top') });
   sim.reportAnchor();
   sim.setPanelSize(1000, 80);
-  assert.strictEqual(sim.gapTo('top'), sim.visualGap, '面板变高后出现间隙');
+  assert.strictEqual(sim.gapTo('top'), sim.gapFor('top'), '面板变高后出现间隙');
 });
 
 console.log('\n[7] Dock 不可用');
@@ -347,7 +379,7 @@ ok('拖开很小距离后松手仍会吸附（贴得够近才吸）', () => {
   sim.dragTo(0, 8);    // 仅拖离 8px，仍在 26px 内
   sim.endDrag();
   assert.ok(sim.relation, '近距离松手应重新吸附');
-  assert.strictEqual(sim.gapTo('top'), sim.visualGap);
+  assert.strictEqual(sim.gapTo('top'), sim.gapFor('top'));
 });
 
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
