@@ -122,29 +122,29 @@ ok('提供 DSH_DEBUG_SNAP 调试日志开关', () => {
 ok('视觉框用 SVG getBBox + getScreenCTM 测量真实画面（而非容器 90×90）', () => {
   const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
   const start = floatSrc.indexOf('function readPetAnchor(');
-  const end = floatSrc.indexOf('\n}\n', start);
-  const body = floatSrc.slice(start, end);
+  const unionStart = floatSrc.indexOf('function readVisibleUnion(');
+  const unionEnd = floatSrc.indexOf('\n}\n', unionStart);
+  const body = floatSrc.slice(start, unionEnd);
   assert.ok(/getBBox\(\)/.test(body), '未使用 getBBox 测量真实绘制内容');
   assert.ok(/getScreenCTM\(\)/.test(body), '未做用户单位 → 客户端坐标转换');
   assert.ok(/\.pet-svg/.test(floatSrc), '未定位到 .pet-svg');
   // 必须仍保留回退，避免 getBBox 抛错时完全没有锚点
-  assert.ok(/getBoundingClientRect\(\)/.test(body), '缺少回退路径');
+  assert.ok(/getBoundingClientRect\(\)/.test(floatSrc), '缺少回退路径');
 });
-ok('地面阴影余量逐边扣除（左右下上也消除间隙）', () => {
+ok('锚点直接量猫本体：遍历可见子元素取并集并跳过阴影', () => {
   const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
-  const start = floatSrc.indexOf('function readPetAnchor(');
+  const start = floatSrc.indexOf('function readVisibleUnion(');
   const end = floatSrc.indexOf('\n}\n', start);
   const body = floatSrc.slice(start, end);
-  assert.ok(/readShadowClientBox\(/.test(body), '未按阴影实测包围盒扣除余量');
-  // 必须处理左右与底部三条被阴影"撑大"的边，而不是只收底边
-  assert.ok(/shadowBox\.right/.test(body) && /shadowBox\.bottom/.test(body),
-    '未逐边扣除阴影造成的余量');
-  assert.ok(/sideSlack/.test(body), '未按阴影半宽收紧左右边（椭圆极值贴着盒边）');
-  const boxStart = floatSrc.indexOf('function readShadowClientBox(');
-  const boxEnd = floatSrc.indexOf('\n}\n', boxStart);
-  const boxBody = floatSrc.slice(boxStart, boxEnd);
-  assert.ok(/\.pet-shadow/.test(boxBody), '未定位阴影元素');
-  assert.ok(/left:|right:|top:|bottom:/.test(boxBody), '阴影包围盒未返回四边');
+  assert.ok(/petSvg\.children/.test(body), '未遍历 SVG 可见子元素');
+  assert.ok(/pet-shadow/.test(floatSrc), '未定义阴影选择器');
+  assert.ok(/SHADOW_SELECTOR/.test(body), '遍历时未跳过地面阴影元素');
+  assert.ok(/left/.test(body) && /right/.test(body) && /top/.test(body) && /bottom/.test(body),
+    '并集未覆盖四条边');
+  // 不应再依赖「整体包围盒 + 阴影补偿」的近似
+  const anchor = floatSrc.slice(floatSrc.indexOf('function readPetAnchor('), start);
+  assert.ok(!/readShadowClientBox|sideSlack/.test(anchor),
+    '仍在使用整体包围盒 + 阴影扣除的近似（会导致四边偏差不一致）');
 });
 
 console.log('\n[5] 拖动窗口移动合并到每帧一次（修复拖动闪动）');

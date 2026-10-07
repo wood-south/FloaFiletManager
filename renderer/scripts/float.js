@@ -515,65 +515,29 @@ let anchorLastReport = null;
 /**
  * 读取宠物的**真实视觉框**（相对窗口左上角）。
  *
- * 关键点一：不能用 `.pet-avatar` 的 getBoundingClientRect() —— 它是 90×90 的容器，
- * 而 SVG 内容只占其中一部分，容器四周留有空边。
- * 因此用 SVG 的 getBBox()（用户单位）经 getScreenCTM() 转客户端坐标。
+ * 反复试错后的结论：不要用「整体包围盒 + 阴影补偿」的思路。
+ * 地面阴影 `<ellipse class="pet-shadow">` 是个外切椭圆，它在四条边都超出猫本体，
+ * 但超出量各不相同（下约 5、左右各约 5、上 0），任何"统一内缩/逐边扣除"的近似
+ * 都会在某个方向偏掉 —— 表现为「上/左/右覆盖边框、下方又太远」。
  *
- * 关键点二：`<ellipse class="pet-shadow">`（地面阴影，cx=50 cy=90 rx=25 ry=5）几乎不可见，
- * 但它的包围盒**四个方向都超出猫本体**：
- *   - 纵向：阴影 y 85..95，猫本体（爪子 cy=78/ry=4、身体底 ≈80）只到 80；
- *   - 横向：阴影 x 25..75，猫本体（耳朵 x 25..75、脸 25..75）基本同宽。
- * 若把它算进外接框，四个方向的贴合边都会落在阴影边缘上，视觉上离面板空出一截。
- * 因此按阴影的纵向半径对**四条边**做等量内缩（旋转 90° 后同样成立，
- * 因为内缩量是各向同性的），让猫本体成为真正的贴合边。
+ * 现在改为**直接量猫自己的图形**：遍历 SVG 可见子元素，
+ * 跳过 .pet-shadow，把其余元素（头、耳、眼、爪、胡须…）的包围盒取并集。
+ * 这样锚点边界就是用户真正看到的轮廓，新增部件也会自动纳入。
  */
+const SHADOW_SELECTOR = '.pet-shadow';
+
 function readPetAnchor() {
   if (petSvg && typeof petSvg.getBBox === 'function' && typeof petSvg.getScreenCTM === 'function') {
     try {
-      const box = petSvg.getBBox();
       const ctm = petSvg.getScreenCTM();
-      if (box && ctm && box.width > 0 && box.height > 0) {
-        // 用 CTM 把用户单位包围盒的四个角映射到客户端坐标，取外接矩形
-        const xs = [];
-        const ys = [];
-        [[box.x, box.y], [box.x + box.width, box.y],
-          [box.x, box.y + box.height], [box.x + box.width, box.y + box.height]
-        ].forEach(([ux, uy]) => {
-          xs.push(ctm.a * ux + ctm.c * uy + ctm.e);
-          ys.push(ctm.b * ux + ctm.d * uy + ctm.f);
-        });
-        let left = Math.min(...xs);
-        const top = Math.min(...ys);
-        let right = Math.max(...xs);
-        let bottom = Math.max(...ys);
-
-        // 精确扣除地面阴影在各边造成的余量。
-        // 阴影是一个外切椭圆，在**四条边**都超出猫本体，因此必须逐边内缩：
-        // 只收底边（早期做法）会让贴左/右/下时仍有间隙。
-        // 判定"阴影是否造成了这条边"用容差比较，避免误伤其他元素形成的边界。
-        const shadowBox = readShadowClientBox(ctm);
-        if (shadowBox) {
-          const eps = 0.75;
-          if (Math.abs(shadowBox.right - right) <= eps) right = shadowBox.right;
-          if (Math.abs(shadowBox.bottom - bottom) <= eps) bottom = shadowBox.top;
-          // 阴影左右极值贴着盒边 → 猫身实际宽度略小于盒宽，按阴影半宽与盒宽之差收紧
-          const shadowWidth = shadowBox.right - shadowBox.left;
-          const boxWidth = right - left;
-          if (shadowWidth > 0 && shadowWidth < boxWidth) {
-            const sideSlack = (boxWidth - shadowWidth) / 2;
-            if (sideSlack > 0 && sideSlack < boxWidth / 2) {
-              left += sideSlack;
-              right -= sideSlack;
-            }
-          }
-        }
-
-        const width = right - left;
-        const height = bottom - top;
+      const union = readVisibleUnion(ctm);
+      if (union) {
+        const width = union.right - union.left;
+        const height = union.bottom - union.top;
         if (width >= 1 && height >= 1) {
           return {
-            left: Math.round(left),
-            top: Math.round(top),
+            left: Math.round(union.left),
+            top: Math.round(union.top),
             width: Math.round(width),
             height: Math.round(height)
           };
@@ -594,33 +558,43 @@ function readPetAnchor() {
 }
 
 /**
- * 地面阴影在客户端坐标下的包围盒。
- * 阴影为水平椭圆，其包围盒顶边即为"猫本体可见下沿"的近似（爪子只比它高约 2 用户单位）。
- * 无阴影或不可测量时返回 null。
+ * 猫本体（排除地面阴影）在客户端坐标下的并集边界。
+ * @returns {{left:number,top:number,right:number,bottom:number}|null}
  */
-function readShadowClientBox(ctm) {
-  const shadow = petSvg && petSvg.querySelector ? petSvg.querySelector('.pet-shadow') : null;
-  if (!shadow || typeof shadow.getBBox !== 'function') return null;
-  try {
-    const sBox = shadow.getBBox();
-    if (!sBox || !sBox.width || !sBox.height) return null;
-    const xs = [];
-    const ys = [];
-    [[sBox.x, sBox.y], [sBox.x + sBox.width, sBox.y],
-      [sBox.x, sBox.y + sBox.height], [sBox.x + sBox.width, sBox.y + sBox.height]
+function readVisibleUnion(ctm) {
+  const children = petSvg.children ? Array.from(petSvg.children) : [];
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+
+  for (const el of children) {
+    if (el.classList && el.classList.contains(SHADOW_SELECTOR.slice(1))) continue;
+    if (typeof el.getBBox !== 'function') continue;
+    let b;
+    try {
+      b = el.getBBox();
+    } catch (_) {
+      continue;
+    }
+    if (!b || !b.width || !b.height) continue;
+    [[b.x, b.y], [b.x + b.width, b.y],
+      [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]
     ].forEach(([ux, uy]) => {
-      xs.push(ctm.a * ux + ctm.c * uy + ctm.e);
-      ys.push(ctm.b * ux + ctm.d * uy + ctm.f);
+      const x = ctm.a * ux + ctm.c * uy + ctm.e;
+      const y = ctm.b * ux + ctm.d * uy + ctm.f;
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
     });
-    return {
-      left: Math.min(...xs),
-      top: Math.min(...ys),
-      right: Math.max(...xs),
-      bottom: Math.max(...ys)
-    };
-  } catch (_) {
+  }
+
+  if (!Number.isFinite(left) || !Number.isFinite(top) ||
+      !Number.isFinite(right) || !Number.isFinite(bottom)) {
     return null;
   }
+  return { left, top, right, bottom };
 }
 
 function isSameAnchor(a, b) {
