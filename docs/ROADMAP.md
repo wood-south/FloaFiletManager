@@ -120,6 +120,25 @@
 
 **提交**：`fix: 吸附改用真实视觉框推导，光标不再频繁切换`（`1ce8b13`）
 
+### 阶段 4 补充修复（Dock 顶部受限 + 吸附空隙/不跟随）
+
+| 问题 | 根因 | 修复 |
+| --- | --- | --- |
+| **Dock 拖不到屏幕上方** | `move-dock` 按**窗口边界**钳制，而窗口为预留菜单/浮层空间高达 420px → 面板最低只能到 `workArea.y + (窗口高 − 面板高)` | 改按**面板可见边界**钳制：`minY = workArea.y − (窗口高 − 面板高)`，允许透明部分移出工作区上沿 |
+| **吸附后差一截（约 40px）** | `report-pet-anchor` 只走"保持"逻辑，而它在吸附关系为空时直接返回。若首次吸附发生在锚点上报之前，会用整个 160 窗口代替 90×80 的宠物视觉框，偏差 `(160−80)/2 = 40px` **永远不会被纠正** | 拆成 `searchDockSnap()`（搜索+建关系）与 `maintainDockSnap()`（沿当前边保持）；锚点上报后无关系则 search、有关系则 maintain。并移除"锚点缺失回退为窗口边界"的旧写法（那正是偏差来源），改为锚点未就绪时不吸附 |
+| **拖 Dock 时桌宠不跟随** | 同一根因：首次吸附后从未建立跟随关系 | 同上；`move-dock`/`resize-dock-window`/`report-dock-panel-offset` 统一调用 `maintainDockSnap`，并加 `SNAP_SETTLE_TOLERANCE = 2` 静止容差防抖动 |
+
+**排查手段**：设置环境变量 `DSH_DEBUG_SNAP=1` 启动，主进程会输出 `[snap]` 日志（面板/锚点/浮窗/视觉框坐标），
+在无法启动 GUI 的环境下也能核对吸附数值：
+
+```powershell
+$env:DSH_DEBUG_SNAP=1; npx electron .
+```
+
+**检测**：`npm test` 6 个脚本全部通过；新增 `test/snap-contract.test.js`（10 项源码级契约断言）。
+
+**提交**：`fix: Dock 可拖到屏幕顶部，吸附不再有空隙且跟随移动`（`4ac9a0d`）
+
 ---
 
 ### 阶段 1：抽出第一个能力 `quick-upload`（最小验证）
