@@ -31,6 +31,27 @@
 | −1.4 | **CHANGELOG 领先于代码** → 标注未落地项 | `CHANGELOG.md` |
 
 **检测**：`npm run lint` 全绿；启动应用手测 6 条（见第五节 A 组）。
+**提交**：`fix: 阶段-1 止损（文件管理器拖动、图标缓存位置、IPC 路径校验）` — ✅ 已提交（`5f62f03`）
+
+---
+
+### 阶段 −1.5：修复陈旧文件列表与 Dock 失效图标反馈
+
+首轮手测后追加的缺陷修复（对应"文件不存在却弹删除窗口"的反馈）。
+
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| −1.5.1 | **根因**：`file-manager.js` 的 `onFilesChanged` 用字符串完全相等判断目录变化，注释声称支持"子路径"但从未实现 → 子目录内的删除/移动不刷新列表，界面残留失效条目。新增 `isSameOrSubPath()` 做双向判断 | ✅ |
+| −1.5.2 | `loadFiles` 失败时补清空 `currentFiles`/`currentPath` 并禁用删除按钮 | ✅ |
+| −1.5.3 | 新增 `check-paths-exist` 通道，删除前校验存在性；全部失效直接提示并刷新，部分失效提示跳过数量并二次确认 | ✅ |
+| −1.5.4 | 删除错误区分"文件不存在"与其他失败，分别给出准确文案 | ✅ |
+| −1.5.5 | **Dock**：启动路径已不存在的图标此前静默无反应（`system-action` 对不存在路径仍 `openPath` 且返回 `success`）→ 明确返回 `{success:false, code:'ENOENT'}`，Dock 侧 toast 提示 | ✅ |
+| −1.5.6 | **Dock**：右键"删除此图标"补确认框；toast/对话框期间临时扩展 Dock 窗口防止提示被裁剪 | ✅ |
+| −1.5.7 | `show-message-box` 以调用方窗口为父窗口，避免置顶无边框窗口遮挡原生对话框 | ✅ |
+
+**检测**：ESLint 全绿；`node --check` 7 个文件全部通过；从 `file-manager.js` **真实抽取**的 `isSameOrSubPath` 跑 13 项断言全部通过（含 `ab` vs `abc` 前缀陷阱、正反斜杠混用、大小写、中文路径，以及原 bug 场景的复现与修复验证）；`guard.js` 22 项断言仍全绿。
+**提交**：`fix: 阶段-1.5 修复文件列表陈旧与 Dock 失效图标无反馈` — ✅ 已提交（`38bc848`）
+
 
 ---
 
@@ -184,20 +205,25 @@
 每个阶段一个提交，格式沿用仓库现有风格（`feat:` / `fix:` / `refactor:` / `docs:` / `chore:`）：
 
 ```
-阶段 −1:  fix: 修复文件管理器无法拖动与图标缓存写入位置
-阶段  0:  refactor: 抽取共用模态框与 Toast 原语
-阶段  1:  refactor: 抽出 quick-upload 能力并引入能力注册表
-阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁
-阶段  3:  feat: 桌宠动画状态机与皮肤包格式
-阶段  4:  fix: 重构吸附几何计算与锚点上报
-阶段  5:  refactor: 主进程按能力分家
-阶段  6:  refactor: 配置命名空间化 v1→v2 迁移
-阶段  7:  feat: Dock 变量化、磁贴放大与多屏支持
-阶段  8:  feat: 本地皮肤包导入导出与商城页
-阶段  9:  chore: 测试、日志与文档收口
+✅ 阶段 −1:  fix: 阶段-1 止损（文件管理器拖动、图标缓存位置、IPC 路径校验）      [5f62f03]
+✅ 阶段 −1.5: fix: 阶段-1.5 修复文件列表陈旧与 Dock 失效图标无反馈              [38bc848]
+   阶段  0:  refactor: 抽取共用模态框与 Toast 原语
+   阶段  1:  refactor: 抽出 quick-upload 能力并引入能力注册表
+   阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁
+   阶段  3:  feat: 桌宠动画状态机与皮肤包格式
+   阶段  4:  fix: 重构吸附几何计算与锚点上报
+   阶段  5:  refactor: 主进程按能力分家
+   阶段  6:  refactor: 配置命名空间化 v1→v2 迁移
+   阶段  7:  feat: Dock 变量化、磁贴放大与多屏支持
+   阶段  8:  feat: 本地皮肤包导入导出与商城页
+   阶段  9:  chore: 测试、日志与文档收口
 ```
 
-**约定**：只提交本地，不 `push`（当前本地领先 `origin/main` 4 个提交，推送时机由你决定）。
+**验证脚本**：`.userdata/stage-minus1-check.js`（22 项）与 `.userdata/stage-minus15-check.js`（13 项）为纯 Node 断言脚本，
+不依赖 Electron，可随时重跑：`node .userdata/stage-minus1-check.js`。
+（`.userdata/` 已被 `.gitignore` 忽略，属开发环境数据。）
+
+**约定**：只提交本地，不 `push`（推送时机由你决定）。当前本地领先 `origin/main` 6 个提交。
 
 ---
 
