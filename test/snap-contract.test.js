@@ -148,13 +148,16 @@ ok('锚点直接量猫本体：遍历可见子元素取并集并跳过阴影', (
 });
 
 console.log('\n[5] 拖动窗口移动合并到每帧一次（修复拖动闪动）');
-[['float.js', 'moveWindow'], ['dock.js', 'moveDock']].forEach(([file, api]) => {
-  ok(file + ' 的拖动逻辑使用 requestAnimationFrame 合并', () => {
-    const src = fs.readFileSync(path.join(root, 'renderer', 'scripts', file), 'utf8');
-    assert.ok(/requestAnimationFrame/.test(src), file + ' 未使用 rAF');
-    // 直接调用点应受 rAF 保护：出现 rafPending/raf 标记
-    assert.ok(/rafPending|dragRafPending/.test(src),
-      file + ' 缺少「本帧已排程」标记，可能一帧内多次移动窗口');
+// 阶段 2 把浮窗的拖动逻辑抽到 renderer/pet/interaction.js（float.js 只做装配），
+// 因此合并位移的标记与 moveWindow 调用点都在该模块里；断言随之指向新位置。
+[['renderer/pet/interaction.js', 'moveWindow'],
+  ['renderer/scripts/dock.js', 'moveDock']].forEach(([relPath, api]) => {
+  ok(relPath + ' 的拖动逻辑使用 requestAnimationFrame 合并', () => {
+    const src = fs.readFileSync(path.join(root, relPath), 'utf8');
+    assert.ok(/requestAnimationFrame|raf\(/.test(src), relPath + ' 未使用 rAF');
+    // 直接调用点应受 rAF 保护：出现「本帧已排程」标记
+    assert.ok(/rafPending/.test(src),
+      relPath + ' 缺少「本帧已排程」标记，可能一帧内多次移动窗口');
     assert.ok(new RegExp(api).test(src), '未找到 ' + api);
   });
 });
@@ -195,12 +198,16 @@ ok('浮窗在 mousedown/mouseup 通知拖动状态', () => {
 console.log('\n[7] 脱离吸附时必须复位宠物朝向（修复姿态卡住）');
 ok('浮窗提供 clearDockOrientation 并在开始拖动时调用', () => {
   const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  const interactionSrc = fs.readFileSync(path.join(root, 'renderer', 'pet', 'interaction.js'), 'utf8');
   assert.ok(/function clearDockOrientation\(/.test(floatSrc), '缺少 clearDockOrientation');
-  const dragStart = floatSrc.indexOf("petBody.addEventListener('mousedown'");
-  const dragEnd = floatSrc.indexOf('});', dragStart);
-  const body = floatSrc.slice(dragStart, dragEnd);
-  assert.ok(/clearDockOrientation\(\)/.test(body),
-    '开始拖动时未清除 Dock 朝向 —— 宠物会以侧躺/倒立姿态被拖走');
+  // 阶段 2 后「开始拖动」在 interaction.js 里；壳层通过 onClearOrientation 回调注入。
+  // 因此这里要同时守住：模块在按下时调用该回调，且壳层确实注入了它。
+  const downIdx = interactionSrc.indexOf('function onPointerDown(');
+  const downBody = interactionSrc.slice(downIdx, interactionSrc.indexOf('\n    }', downIdx));
+  assert.ok(/onClearOrientation/.test(downBody),
+    '开始拖动时未通知壳层清除 Dock 朝向 —— 宠物会以侧躺/倒立姿态被拖走');
+  assert.ok(/onClearOrientation:\s*\(\)\s*=>\s*clearDockOrientation\(\)/.test(floatSrc),
+    '壳层未把 clearDockOrientation 注入交互模块');
 });
 ok('onDockSnapChanged 先清除再设置朝向', () => {
   const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');

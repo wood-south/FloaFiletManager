@@ -9,34 +9,40 @@ const modalTitle = document.getElementById('modalTitle');
 const modalMessage = document.getElementById('modalMessage');
 const modalButtons = document.getElementById('modalButtons');
 
-let isDragging = false;
-let mouseStartX = 0;
-let mouseStartY = 0;
-let hasMoved = false;
 let menuOpen = false;
 let quitOpen = false;
-let clickTimer = null;
 let wasSnapped = false;
 let snapLock = false;
-let modalActive = false; // 模态框打开时禁止点击穿透
-// 拖动的窗口移动合并到每帧一次（避免同一帧多次 setPosition 造成闪动）
-let dragPendingDx = 0;
-let dragPendingDy = 0;
-let dragRafPending = false;
 
-/* ========== 点击穿透：透明区域允许鼠标穿透到桌面 ========== */
-function enableMouseCapture() {
-  if (window.electronAPI?.setIgnoreMouseEvents) {
-    window.electronAPI.setIgnoreMouseEvents(false);
+/* ========== 点击穿透：透明区域允许鼠标穿透到桌面 ==========
+   仲裁实现见 renderer/pet/penetration.js：以「交互原因集合」取代原先
+   !menuOpen && !quitOpen && !modalActive && !isDragging 的布尔链。
+   后者与执行顺序相关（菜单开着时拖放结束会误开穿透），且每加一个阻塞来源
+   都要改所有判断点。现在只在需要时 acquire/release 自己的原因。 */
+const penetration = window.createPenetration({
+  setIgnore: (ignore, opts) => {
+    if (window.electronAPI?.setIgnoreMouseEvents) {
+      window.electronAPI.setIgnoreMouseEvents(ignore, opts);
+    }
   }
+});
+
+const PEN_REASON = {
+  menu: 'menu',
+  quit: 'quit',
+  modal: 'modal',
+  drag: 'drag',
+  pointerInside: 'pointer-inside'
+};
+
+function enableMouseCapture() {
+  penetration.acquire(PEN_REASON.pointerInside);
 }
 function enableClickThrough() {
-  if (window.electronAPI?.setIgnoreMouseEvents) {
-    window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
-  }
+  penetration.release(PEN_REASON.pointerInside);
 }
 // 初始化：窗口加载后启用点击穿透
-enableClickThrough();
+penetration.init();
 
 /* ========== 共用 UI 原语（模态框 / Toast） ==========
    实现见 renderer/scripts/primitives.js，避免与文件管理器各写一份。
@@ -55,17 +61,16 @@ const ui = window.createPrimitives({
     if (window.electronAPI.expandFloatWindow) {
       window.electronAPI.expandFloatWindow(420, 320);
     }
-    modalActive = true;
-    enableMouseCapture(); // 模态框打开期间关闭穿透，确保按钮可点击
+    penetration.acquire(PEN_REASON.modal); // 模态框期间必须捕获鼠标，否则按钮点不到
   },
   onClose: () => {
-    modalActive = false;
     // 关闭后恢复浮窗原尺寸
     if (window.electronAPI.restoreFloatWindow) {
       window.electronAPI.restoreFloatWindow();
     }
-    // 恢复穿透：仅当菜单/退出按钮也都关闭时
-    if (!menuOpen && !quitOpen) enableClickThrough();
+    // 只撤销「模态」这一个原因：菜单/退出是否仍开着由它们自己维护，
+    // 不再需要在这里重复判断（原实现正是在这里漏判导致误开穿透）
+    penetration.release(PEN_REASON.modal);
   }
 });
 
@@ -80,7 +85,7 @@ function toggleMenu() {
   }
   closeQuit();
   menuOpen = true;
-  enableMouseCapture(); // 菜单打开：保持鼠标捕获
+  penetration.acquire(PEN_REASON.menu); // 菜单打开：保持鼠标捕获
   menuRing.classList.add('open');
 }
 
@@ -88,7 +93,7 @@ function closeMenu() {
   if (!menuOpen) return;
   menuOpen = false;
   menuRing.classList.remove('open');
-  if (!quitOpen && !modalActive) enableClickThrough(); // 菜单关闭：恢复穿透
+  penetration.release(PEN_REASON.menu);
 }
 
 function toggleQuit() {
@@ -106,8 +111,48 @@ function closeQuit() {
   if (!quitOpen) return;
   quitOpen = false;
   quitRing.classList.remove('open');
-  if (!menuOpen && !modalActive) enableClickThrough(); // 退出按钮关闭：恢复穿透
+  penetration.release(PEN_REASON.quit);
 }
+
+/* ========== 交互手势（拖动 / 单击 / 双击 / 右键） ==========
+   实现见 renderer/pet/interaction.js。壳层只提供回调与查询，
+   「是否在拖动」只有一个写入点，穿透仲裁据此 acquire/release。
+
+   注意：回调里用箭头函数包装，避免在 clearDockOrientation 等函数声明之前
+   取其函数值（const/let 的 TDZ 会抛错，而函数声明虽会提升、但直接传引用
+   仍可能读到尚未初始化的绑定）。 */
+const interaction = window.createInteraction({
+  setCursor: (cursor) => setPetCursor(cursor),
+  moveWindow: (dx, dy) => window.electronAPI.moveWindow(dx, dy),
+  onSavePosition: () => {
+    wasSnapped = false; // 拖动过，离开时不弹回贴边
+    window.electronAPI.saveWindowPosition();
+  },
+  onSnapRelease: () => {
+    // 进入手动拖动：主进程需完全停止自动吸附
+    if (window.electronAPI?.setPetDragging) window.electronAPI.setPetDragging(true);
+  },
+  onSnapRestore: () => {
+    // 只是点击（没移动）：同样要解除拖动抑制
+    if (window.electronAPI?.setPetDragging) window.electronAPI.setPetDragging(false);
+  },
+  onClearOrientation: () => clearDockOrientation(),
+  onDragStateChange: (dragging) => {
+    if (dragging) {
+      penetration.acquire(PEN_REASON.drag); // 拖动期间不得恢复穿透，否则 mousemove 会丢
+      petBody.classList.add('dragging');
+    } else {
+      penetration.release(PEN_REASON.drag);
+      petBody.classList.remove('dragging');
+    }
+  },
+  onClick: () => toggleMenu(),
+  onDoubleClick: () => {
+    closeMenu();
+    closeQuit();
+    window.electronAPI.openFileManager();
+  }
+});
 
 // 检查是否处于贴边状态
 function hasSnapClass() {
@@ -120,10 +165,9 @@ function hasSnapClass() {
 // 贴边时鼠标悬停 → 弹出显示；离开 → 收回贴边
 petBody.addEventListener('mouseenter', () => {
   enableMouseCapture(); // 进入内容区域：关闭穿透，捕获鼠标
-  if (isDragging || snapLock) return;
+  if (interaction.isDragging() || snapLock) return;
   if (hasSnapClass()) {
     wasSnapped = true;
-    hasMoved = false;
     snapLock = true;
     window.electronAPI.unsnapWindow().then(() => {
       setTimeout(() => { snapLock = false; }, 200);
@@ -134,117 +178,37 @@ petBody.addEventListener('mouseenter', () => {
 petBody.addEventListener('mouseleave', () => {
   if (snapLock) return;
   // 菜单/退出按钮打开时不收回，避免操作中断
-  if (wasSnapped && !isDragging && !hasMoved && !menuOpen && !quitOpen) {
+  if (wasSnapped && !interaction.isDragging() && !interaction.hasMoved() && !menuOpen && !quitOpen) {
     snapLock = true;
     window.electronAPI.resnapWindow().then(() => {
       setTimeout(() => { snapLock = false; }, 200);
     });
   }
   wasSnapped = false;
-  // 离开内容区域：恢复穿透（菜单/退出按钮/模态框/拖动中不穿透，避免拖动断连）
-  if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
+  // 离开内容区只撤销「鼠标在内容区内」这一个原因；
+  // 菜单/退出/模态/拖动各自的原因仍需保留（这正是原布尔链会误开穿透的场景）
+  enableClickThrough();
 });
 
 // 兜底：拖动中若窗口失焦（例如鼠标在窗口外松开），
 // 必须解除拖动抑制，否则吸附会被永久禁用
 window.addEventListener('blur', () => {
-  if (isDragging) {
-    isDragging = false;
+  if (interaction.abortDrag()) {
     petBody.classList.remove('dragging');
-    if (window.electronAPI?.setPetDragging) {
-      window.electronAPI.setPetDragging(false);
-    }
   }
 });
 
 // 拖动逻辑
 petBody.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
-  isDragging = true;
-  hasMoved = false;
-  mouseStartX = e.screenX;
-  mouseStartY = e.screenY;
-  dragPendingDx = 0;
-  dragPendingDy = 0;
-  petBody.classList.add('dragging');
-  setPetCursor(CURSOR_GRABBING); // 拖动期间锁定光标，避免与 hover 判定交替
-  // 一旦开始手动拖动就清除 Dock 朝向：宠物被拿起后应恢复正立，
-  // 不必等到松手才复位（否则拖动过程中一直是侧躺/倒立姿态）
-  clearDockOrientation();
-  // 通知主进程进入"手动拖动"状态：这期间必须完全停止自动吸附，
-  // 否则松手前的每一帧都会被拉回吸附位置（表现为吸附后拖不动、会弹回）
-  if (window.electronAPI?.setPetDragging) {
-    window.electronAPI.setPetDragging(true);
-  }
+  interaction.onPointerDown(e);
 });
 
 document.addEventListener('mousemove', (e) => {
-  if (!isDragging) return;
-  dragPendingDx += e.screenX - mouseStartX;
-  dragPendingDy += e.screenY - mouseStartY;
-  if (Math.abs(dragPendingDx) > 3 || Math.abs(dragPendingDy) > 3) {
-    hasMoved = true;
-  }
-  mouseStartX = e.screenX;
-  mouseStartY = e.screenY;
-  // 合并到每帧一次窗口移动：早期实现每次 mousemove 都调 moveWindow，
-  // 同一帧内可能触发多次 setPosition（透明窗口每次都是合成层重排），表现为拖动闪动、跟手性差
-  if (!dragRafPending) {
-    dragRafPending = true;
-    requestAnimationFrame(flushDragMove);
-  }
+  interaction.onPointerMove(e);
 });
 
-function flushDragMove() {
-  dragRafPending = false;
-  if (!isDragging) {
-    dragPendingDx = 0;
-    dragPendingDy = 0;
-    return;
-  }
-  const dx = dragPendingDx;
-  const dy = dragPendingDy;
-  dragPendingDx = 0;
-  dragPendingDy = 0;
-  if (dx === 0 && dy === 0) return;
-  window.electronAPI.moveWindow(dx, dy);
-}
-
 document.addEventListener('mouseup', (e) => {
-  if (!isDragging) return;
-  isDragging = false;
-  petBody.classList.remove('dragging');
-
-  // 拖动结束后单次保存位置
-  if (hasMoved) {
-    // 先把最后一帧尚未提交的位移发出去，避免松手瞬间「少走一截」
-    flushDragMove();
-    wasSnapped = false; // 拖动过，离开时不弹回贴边
-    // 结束手动拖动状态，随后 saveWindowPosition 会按新位置重新评估吸附
-    window.electronAPI.saveWindowPosition();
-  } else if (window.electronAPI?.setPetDragging) {
-    // 只是点击（没移动）：同样要解除拖动抑制
-    window.electronAPI.setPetDragging(false);
-  }
-
-  // 没有移动 => 单击或双击
-  if (!hasMoved && e.button === 0) {
-    // 等待判断是否双击
-    if (clickTimer) {
-      // 双击 → 打开文件管理
-      clearTimeout(clickTimer);
-      clickTimer = null;
-      closeMenu();
-      closeQuit();
-      window.electronAPI.openFileManager();
-    } else {
-      clickTimer = setTimeout(() => {
-        // 单击 → 切换菜单
-        clickTimer = null;
-        toggleMenu();
-      }, 250);
-    }
-  }
+  interaction.onPointerUp(e);
 });
 
 // 右键 → 显示/收起退出按钮
@@ -610,13 +574,11 @@ document.addEventListener('visibilitychange', () => {
 startAnchorWatch();
 
 /* ========== 光标稳定 ==========
-   原先依赖 `.pet-body:hover` 与 `.drag-overlay` 等元素的 CSS 命中测试来切换光标，
-   但 hover 会触发 transform: scale(1.05)，命中区随之变化；在窗口移动/缩放期间
-   命中测试滞后会形成 enter/leave 来回触发，表现为光标在「箭头 ↔ 手型」之间频繁切换。
-   这里改为用一次 getBoundingClientRect 命中判定来决定光标，不再依赖 hover 状态。 */
-const CURSOR_GRAB = 'grab';
-const CURSOR_GRABBING = 'grabbing';
-const CURSOR_POINTER = 'pointer';
+   原先依赖 `.pet-body:hover` 等元素的 CSS 命中测试来切换光标，但 hover 会触发
+   transform: scale(1.05)，命中区随之变化；窗口移动/缩放期间命中测试滞后会形成
+   enter/leave 来回触发，表现为光标在「箭头 ↔ 手型」之间频繁切换。
+   现在由 renderer/pet/interaction.js 统一按 getBoundingClientRect 命中判定，
+   壳层只把它写进 CSS 变量（函数声明会被提升，供上方 createInteraction 直接引用）。 */
 
 function setPetCursor(cursor) {
   if (petBody && petBody.style.getPropertyValue('--pet-cursor') !== cursor) {
@@ -625,25 +587,20 @@ function setPetCursor(cursor) {
 }
 
 document.addEventListener('mousemove', (e) => {
-  if (isDragging) {
-    setPetCursor(CURSOR_GRABBING);
-    return;
-  }
   const target = e.target;
-  // 菜单按钮/退出按钮上显示手型
-  if (target && target.closest && target.closest('.menu-btn, .quit-btn')) {
-    setPetCursor(CURSOR_POINTER);
-    return;
-  }
+  const onButton = !!(target && target.closest && target.closest('.menu-btn, .quit-btn'));
   const rect = visualBox ? visualBox.getBoundingClientRect() : null;
-  if (!rect) return;
-  const inside = e.clientX >= rect.left && e.clientX <= rect.right &&
-    e.clientY >= rect.top && e.clientY <= rect.bottom;
-  setPetCursor(inside ? CURSOR_GRAB : 'default');
+  const insideContainer = !!petBody && e.clientX >= 0 && e.clientY >= 0 &&
+    e.clientX <= window.innerWidth && e.clientY <= window.innerHeight;
+  interaction.updateCursor(
+    { clientX: e.clientX, clientY: e.clientY, onButton },
+    rect,
+    insideContainer
+  );
 });
 
 document.addEventListener('mouseleave', () => {
-  setPetCursor(CURSOR_GRAB);
+  interaction.resetCursor();
 });
 
 

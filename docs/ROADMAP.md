@@ -232,13 +232,47 @@ search 与 maintain 统一走 `decide()` 消除公式分叉。
 
 ### 阶段 2：壳层定型 + 事件仲裁
 
-| 项 | 内容 |
-| --- | --- |
-| 2.1 | `float.js` 拆为 `renderer/pet/{shell,interaction,behavior,registry}.js`，`float.js` 仅作装配入口 |
-| 2.2 | **穿透仲裁改计数式**：`pet.setInteractive(reason)` / `releaseInteractive(reason)` 取代 `isDragging/menuOpen/quitOpen/modalActive` 四布尔判断 |
-| 2.3 | 桌宠对外 API 固定为：`toast / modal / setInteractive / on / playAnimation / getAnchor` |
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 2.1 | 浮窗拆分：`renderer/pet/penetration.js`（穿透仲裁）、`renderer/pet/interaction.js`（拖动/单击/双击/右键/光标），`float.js` 只做装配与回调注入 | ✅ |
+| 2.2 | **穿透仲裁改计数式**：`penetration.acquire(reason)` / `release(reason)` 取代 `isDragging/menuOpen/quitOpen/modalActive` 四布尔组合 | ✅ |
+| 2.3 | 桌宠对外 API：`toast / modal / storage / root / getDropHint / refreshDropHint`（阶段 1 已定），加 `penetration` | ✅ |
 
-**检测**：手测穿透边界用例——菜单打开时拖放结束、模态框未关时鼠标移出、右键菜单与退出按钮同时打开，四种组合下穿透状态都正确（现状这几种组合有误开穿透的风险）。
+**为什么必须改计数式**：原实现是
+
+```js
+if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
+```
+
+它与**执行顺序**相关。最典型的翻车场景：菜单开着时结束一次拖动 —— 拖动分支认为自己结束
+了就调用恢复穿透，把菜单的可点击性一起关掉（菜单点不到）。此外每新增一个阻塞来源
+（阶段 1 的能力、阶段 3 的动画/气泡）都要回头改所有判断点，且重复调用不安全。
+
+现在改为**交互原因集合**：只有集合为空才恢复穿透。add/delete 幂等、与调用顺序无关、
+可无限扩展。测试 `test/penetration.test.js` 第 [4] 组专门覆盖「多原因叠加 + 释放顺序无关」。
+
+**顺带修掉的两个真实缺陷（都在新抽出的模块里，测试当场抓出）**：
+
+1. `interaction.js` 的 `flushMove()` 原先以 `dragging` 作为前置条件，而 `onPointerUp`
+   先置 `dragging = false` 再 flush → **松手时最后一帧位移被丢弃**（表现为松手瞬间少走一截）。
+   已改为「先 flush、再结束拖动状态」，并且 `flushMove` 只依据是否有待提交位移。
+2. 双击判定原先依赖「单击定时器仍在挂起」这一同步条件，若浏览器 dblclick 阈值短于
+   250ms 单击延迟就会失效。现改为**推迟一拍**判定（`scheduleClick(..., 0)`），
+   判定结果不再依赖同 tick 时序。
+
+**检测**：
+- `float.js` 595 → 547 行；新增 `pet/penetration.js` 87 行、`pet/interaction.js` 194 行
+- 自检脚本 7 → **9 个**，断言 155 → **210 项**（新增 penetration 27 + interaction 32）
+- `test/snap-contract.test.js` 的两条源码级断言随逻辑迁移更新指向
+  （`rafPending` 与「开始拖动清朝向」现在位于 `pet/interaction.js`），断言意图不变
+- `npm test` 9 个脚本全绿；`npm run lint` 全绿
+
+**尚未完成（原计划里的 2.1 后半）**：`renderer/pet/{shell,behavior}.js` 未拆 ——
+`float.js` 目前仍有约 150 行「宠物视觉框测量与上报」（`readPetAnchor` /
+`readVisibleUnion` / `startAnchorWatch` / 调试框）。这部分与吸附几何强耦合、
+且已有 `snap.test.js` + `snap-flow.test.js` 覆盖，为控制单阶段风险留到后续处理。
+
+**提交**：`refactor: 阶段2 抽离穿透仲裁与交互手势（穿透改原因集合）`
 
 ---
 
@@ -354,7 +388,7 @@ search 与 maintain 统一走 `decide()` 消除公式分叉。
 ✅ 阶段 −1:  fix: 阶段-1 止损（文件管理器拖动、图标缓存位置、IPC 路径校验）      [5f62f03]
 ✅ 阶段 −1.5: fix: 阶段-1.5 修复文件列表陈旧与 Dock 失效图标无反馈              [38bc848]
 ✅ 阶段  0:  refactor: 阶段0 抽取共用 UI 原语（模态框/Toast）                   [6eda6a9]
-   阶段  1:  refactor: 抽出 quick-upload 能力并引入能力注册表
+✅ 阶段  1:  refactor: 抽出 quick-upload 能力并引入能力注册表                   [0861cba]
    阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁
    阶段  3:  feat: 桌宠动画状态机与皮肤包格式
    阶段  4:  fix: 重构吸附几何计算与锚点上报
