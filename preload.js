@@ -85,7 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Dock 窗口扩展/恢复（用于显示音量/WiFi浮层）
   expandDockWindow: (height) => ipcRenderer.invoke('expand-dock-window', height),
   restoreDockWindow: () => ipcRenderer.invoke('restore-dock-window'),
-  resizeDockWindow: (width, height) => ipcRenderer.invoke('resize-dock-window', width, height),
+  resizeDockWindow: (width, height, preserveSavedBounds) => ipcRenderer.invoke('resize-dock-window', width, height, preserveSavedBounds),
   // 电源操作
   powerAction: (action) => ipcRenderer.invoke('power-action', action),
   getNavItems: () => ipcRenderer.invoke('get-nav-items'),

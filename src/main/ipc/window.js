@@ -506,7 +506,9 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
   });
 
   // 调整 Dock 窗口大小（用于根据图标数量自动适配）
-  ipcMain.handle('resize-dock-window', (event, width, height) => {
+  // preserveSavedBounds: 当 Dock 因右键菜单/浮层临时扩展时，调用方传入 true，
+  // 避免覆盖 savedDockBounds 导致 restore-dock-window 还原到错误的尺寸
+  ipcMain.handle('resize-dock-window', (event, width, height, preserveSavedBounds) => {
     const { getDockWindow } = require('../windows');
     const win = getDockWindow();
     if (!win) return false;
@@ -528,7 +530,9 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     win.setResizable(true);
     win.setBounds({ x: newX, y: newY, width: newW, height: newH });
     win.setResizable(false);
-    savedDockBounds = { x: newX, y: newY, width: newW, height: newH };
+    if (!preserveSavedBounds) {
+      savedDockBounds = { x: newX, y: newY, width: newW, height: newH };
+    }
     scheduleDockPosSave(newX, newY + newH);
     return true;
   });

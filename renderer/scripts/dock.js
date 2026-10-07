@@ -481,8 +481,7 @@ function positionPopup(popup, button) {
   popup.style.left = left + 'px';
   // 浮窗显示在 dock 面板上方
   popup.style.bottom = '72px';
-  // 扩展窗口以容纳浮层
-  if (!windowExpandedForMenu) expandForMenu();
+  // 窗口扩展由 showPopup 在定位前统一完成，此处不再重复触发
 }
 
 async function showPopup(type) {
@@ -495,17 +494,20 @@ async function showPopup(type) {
     if (oldPopup) { oldPopup.classList.remove('show'); oldPopup.hidden = true; }
   }
 
-  // 扩展窗口以容纳浮层
-  if (!windowExpandedForMenu) expandForMenu();
+  // 扩展窗口以容纳浮层：必须等待扩展完成再定位，
+  // 否则按钮/容器矩形在窗口尺寸变化过程中读取，浮层会先出现在错误位置再跳一下
+  if (!windowExpandedForMenu) {
+    await expandForMenu();
+    await nextFrame();
+  }
 
   popup.hidden = false;
-  requestAnimationFrame(() => {
-    const button = type === 'volume'
-      ? document.querySelector('[data-nav-action="volume"]')
-      : document.querySelector('[data-nav-action="wifi"]');
-    positionPopup(popup, button);
-    popup.classList.add('show');
-  });
+  await nextFrame();
+  const button = type === 'volume'
+    ? document.querySelector('[data-nav-action="volume"]')
+    : document.querySelector('[data-nav-action="wifi"]');
+  positionPopup(popup, button);
+  popup.classList.add('show');
   activePopup = type;
   if (type === 'volume') loadVolume();
   if (type === 'wifi') {
@@ -861,28 +863,45 @@ if (dockSettings) {
 let openContextMenus = 0;
 let windowExpandedForMenu = false;
 
-function expandForMenu() {
-  if (!window.electronAPI || !window.electronAPI.resizeDockWindow || windowExpandedForMenu) return;
-  // 扩展窗口到 380px 高度以容纳菜单，向上扩展（保持底部位置）
+// 右键菜单所需的最小窗口高度（菜单约 3~4 项，含内边距）
+const MENU_WINDOW_HEIGHT = 280;
+
+/** 等待下一次布局稳定（用于窗口尺寸变化后读取真实 DOM 矩形） */
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+/**
+ * 菜单弹出前确保窗口有足够空间。
+ * 注意：**绝不改变窗口宽度**。此前这里用面板宽度直接 resizeDockWindow(panelW, 380)，
+ * 而 autoFitDockWindow 用的是 panelW + 4（winBuffer），导致窗口宽在 704↔700 之间来回跳、
+ * 面板水平位置抖动 2px，视觉上就是「Dock 闪动」。宽度保持不变即可根除。
+ */
+async function expandForMenu() {
+  if (!window.electronAPI || !window.electronAPI.expandDockWindow) return;
+  if (windowExpandedForMenu) return;
   windowExpandedForMenu = true;
-  requestAnimationFrame(() => {
-    if (window.electronAPI && window.electronAPI.resizeDockWindow) {
-      // 读取当前面板实际宽度
-      const w = dockPanel ? dockPanel.getBoundingClientRect().width : 400;
-      window.electronAPI.resizeDockWindow(w, 380);
-    }
-  });
+
+  const currentHeight = Math.ceil(dockContainer.getBoundingClientRect().height);
+  if (currentHeight >= MENU_WINDOW_HEIGHT) return; // 已够用，不做任何窗口操作
+
+  // expand-dock-window 基于 savedDockBounds 保持底边不动向上扩展，宽度沿用原值
+  await window.electronAPI.expandDockWindow(MENU_WINDOW_HEIGHT);
+  await nextFrame();
+  // 窗口尺寸变化会让主进程持有的 dock-panel 几何失效，必须重新上报，
+  // 否则浮窗吸附位置（以及菜单定位）会用到旧数据
+  reportPanelOffset();
 }
 
 function restoreAfterMenu() {
-  if (!windowExpandedForMenu || !window.electronAPI || !window.electronAPI.resizeDockWindow) return;
+  if (!windowExpandedForMenu) return;
   windowExpandedForMenu = false;
-  requestAnimationFrame(() => {
-    autoFitDockWindow(
-      Math.max(currentSettings?.itemCount || 0, MIN_VISIBLE_ITEMS),
-      currentSettings?.iconSize || 52
-    );
-  });
+  // 用专门的还原通道，精确回到扩展前的边界，避免 autoFit 重算造成二次抖动
+  if (window.electronAPI && window.electronAPI.restoreDockWindow) {
+    window.electronAPI.restoreDockWindow().then(() => {
+      reportPanelOffset();
+    });
+  }
 }
 
 // 关闭右键菜单
@@ -899,11 +918,14 @@ function closeContextMenu(menu) {
 async function positionMenuAtMouse(menu, screenX, screenY) {
   if (!menu) return;
   openContextMenus++; // 先计数，确保 mouseleave 检测到菜单已打开
-  // 先扩展窗口以容纳菜单（如果未扩展）
+  // 确保窗口有足够空间，并等布局稳定后再算坐标
+  // （此前是 expandForMenu() + 固定 setTimeout(100) 猜测等待，
+  //   既可能等不够导致菜单错位，也可能白等造成弹出延迟）
   if (!windowExpandedForMenu) {
-    expandForMenu();
-    // 等待窗口扩展完成
-    await new Promise(r => setTimeout(r, 100));
+    await expandForMenu();
+    await nextFrame();
+  } else {
+    await nextFrame();
   }
 
   // 通过 IPC 获取 dock 窗口边界，将 screen 坐标转为 client 坐标
@@ -1330,7 +1352,7 @@ function autoFitDockWindow(itemCount, iconSize) {
       const totalWidth = Math.max(180, Math.round(panelRect.width + winBuffer));
       const totalHeight = Math.max(60, Math.round(panelRect.height + winBuffer + hoverBuffer));
 
-      window.electronAPI.resizeDockWindow(totalWidth, totalHeight).then(() => {
+      window.electronAPI.resizeDockWindow(totalWidth, totalHeight, windowExpandedForMenu).then(() => {
         // resize 生效后上报真实渲染边界
         reportPanelOffset();
       });
