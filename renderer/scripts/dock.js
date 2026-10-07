@@ -634,7 +634,10 @@ function renderNetworkStatus(status) {
       const connected = status.wired.connected;
       wiredStatusIcon.innerHTML = connected ? WIRED_ICON_CONNECTED : WIRED_ICON_DISCONNECTED;
       wiredStatusRow.classList.toggle('disconnected', !connected);
-      if (wiredStatusName) wiredStatusName.textContent = status.wired.name || '以太网';
+      // 名称固定为「有线连接」：不直接展示系统适配器名（如「以太网适配器 本地连接」），
+      // 该名称来自 ipconfig 输出，在不同系统语言/编码下可能出现乱码，
+      // 且对用户而言连接类型比适配器名更有意义。图标同样使用有线图标。
+      if (wiredStatusName) wiredStatusName.textContent = '有线连接';
       if (wiredStatusIp) wiredStatusIp.textContent = connected && status.wired.ip ? 'IP: ' + status.wired.ip : (connected ? '已连接' : '未连接');
     } else {
       wiredStatus.hidden = true;
@@ -710,7 +713,9 @@ function renderWifiStatus(status) {
   } else {
     wifiStatusIcon.innerHTML = WIFI_ICON_DISCONNECTED;
     wifiStatusSsid.textContent = '未连接';
-    wifiStatusSignal.textContent = status && status.state ? status.state : '';
+    // 状态文案固定为中文：status.state 直接来自 netsh 输出（可能是英文 disconnected），
+    // 且不同系统语言下取值不稳定，不适合直接展示
+    wifiStatusSignal.textContent = status && status.error ? '状态获取失败' : '无线未连接';
     wifiStatusRow.classList.add('disconnected');
     wifiDisconnectBtn.hidden = true;
   }

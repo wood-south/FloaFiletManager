@@ -153,4 +153,24 @@ ok('.dock-context-menu 恢复 pointer-events: auto（菜单挂在 body 下）', 
     '右键菜单未恢复交互，菜单项点不动');
 });
 
+console.log('\n[8] 网络状态文案不得直接暴露系统原始串');
+ok('有线名称固定为「有线连接」（不显示适配器名）', () => {
+  const body = extractFunction(dockSrc, 'renderNetworkStatus');
+  assert.ok(/textContent\s*=\s*'有线连接'/.test(body),
+    '有线名称未固定为「有线连接」，适配器名在部分系统语言/编码下会乱码');
+  assert.ok(!/status\.wired\.name/.test(body),
+    '仍在直接使用 status.wired.name（来自 ipconfig，可能乱码/过长）');
+});
+ok('无线断开文案不再直接使用 netsh 的 state 串', () => {
+  const body = extractFunction(dockSrc, 'renderWifiStatus');
+  // 只校验赋值语句，避免误匹配被一并截取进来的 SVG 常量里的 viewBox
+  assert.ok(!/textContent\s*=\s*[^;]*\bstatus\.state\b/.test(body),
+    '仍在把 status.state（netsh 原始输出，可能是英文/不稳定）直接显示给用户');
+});
+ok('dock.html 默认文案与渲染文案一致', () => {
+  const html = fs.readFileSync(path.join(root, 'renderer', 'dock.html'), 'utf8');
+  assert.ok(/id="wiredStatusName">有线连接</.test(html),
+    'dock.html 中 wiredStatusName 的默认文案与「有线连接」不一致');
+});
+
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
