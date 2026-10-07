@@ -197,8 +197,8 @@ function register({ loadConfig, saveConfig }) {
   /* ========== 能力层配置（按能力 id 隔离命名空间） ==========
      每个可插拔能力（renderer/capabilities/<id>/）把自己的开关与偏好
      存在 config.capabilities[id] 下，避免继续往扁平结构里塞字段。
-     保留 config.capabilities 整块，阶段 6 的 v1→v2 命名空间化迁移
-     会把它一并搬到正式结构里。 */
+     阶段 5 起，主进程能力层（src/main/capabilities/）的 six 个能力也共用它，
+     键为 `enabled`（布尔）。 */
 
   const SAFE_KEY = /^[A-Za-z0-9_-]{1,64}$/;
   const SAFE_ID = /^[a-z0-9-]{1,48}$/;
@@ -239,6 +239,52 @@ function register({ loadConfig, saveConfig }) {
       return { success: true };
     } catch (e) {
       console.error('保存能力配置失败:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
+  /* ========== 主进程能力的启用开关（阶段 5） ==========
+     关闭某能力后其 IPC 通道不再注册（下次启动生效）。
+     实时卸载已注册的处理器会让 preload 的桥接方法变成 reject，
+     比"重启后生效"更容易出错，因此这里明确是**重启生效**。 */
+
+  ipcMain.handle('capability-list', () => {
+    try {
+      const { listMeta, isEnabled } = require('../capabilities');
+      const config = loadConfig();
+      return listMeta().map((meta) => ({
+        ...meta,
+        enabled: isEnabled(config, meta)
+      }));
+    } catch (e) {
+      console.error('读取能力清单失败:', e);
+      return [];
+    }
+  });
+
+  ipcMain.handle('capability-enable', (event, { capabilityId, enabled } = {}) => {
+    if (!SAFE_ID.test(String(capabilityId || ''))) {
+      return { success: false, error: '非法的能力 id' };
+    }
+    if (typeof enabled !== 'boolean') {
+      return { success: false, error: 'enabled 必须是布尔值' };
+    }
+    try {
+      const { CAPABILITIES } = require('../capabilities');
+      if (!CAPABILITIES.some((cap) => cap.id === capabilityId)) {
+        return { success: false, error: '未知能力: ' + capabilityId };
+      }
+      const config = readCapabilityStore();
+      const entry = config.capabilities[capabilityId];
+      if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+        entry.enabled = enabled;
+      } else {
+        config.capabilities[capabilityId] = { enabled };
+      }
+      saveConfig(config);
+      return { success: true, restartRequired: true };
+    } catch (e) {
+      console.error('保存能力开关失败:', e);
       return { success: false, error: e.message };
     }
   });

@@ -371,15 +371,77 @@ if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 
 ### 阶段 5：能力层骨架 + 主进程分家
 
-| 项 | 内容 |
-| --- | --- |
-| 5.1 | `src/main/ipc/{files,config,icons,dialog,system}.js` 迁入 `src/main/capabilities/<id>/` |
-| 5.2 | 新建 `src/main/ipc/core.js`：只留 `move-window`、`save-window-position`、`expand/restore-float-window`、`set-ignore-mouse-events`、`report-*-offset`、`report-pet-anchor` |
-| 5.3 | `index.js` 按 `config.capabilities` 决定加载哪些能力 |
-| 5.4 | 设置窗口页签改为按能力动态挂载（`manifest.settingsPanel`） |
-| 5.5 | 补齐 `docs/CAPABILITIES.md` |
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 5.1 | `src/main/capabilities/index.js`：把「主进程注册了哪些 IPC」变成**可声明、可开关** | ✅ |
+| 5.2 | 六个 `ipc/*.js` 的实现**保持原位**，迁移到 `capabilities/<id>/` | ⬜ 见下 |
+| 5.3 | `index.js` 按 `config.capabilities` 决定加载哪些能力（关闭则不注册其通道） | ✅ |
+| 5.4 | 设置窗口页签按能力动态挂载（`manifest.settingsPanel`） | ⬜ 见下 |
+| 5.5 | 补齐 `docs/CAPABILITIES.md` | ⬜ 见下 |
 
-**检测**：关闭某能力后其 IPC 通道不再注册、菜单按钮不再出现、设置页签不再渲染。
+**本阶段的实际做法（有意保守）**
+
+原计划把 `ipc/{files,config,icons,dialog,system}.js` 搬进 `capabilities/<id>/`。
+实际只做了**在其上建立能力层**，没有搬文件，原因：
+
+- 那六个文件本就按域拆分、职责清晰，搬迁只换路径不换逻辑；而搬迁会同时改动
+  `require` 路径、`index.js` 依赖注入、以及每个模块的相对引用 ——
+  与「建立声明 + 开关」是两类风险，叠在同一次提交里会难以定位问题。
+- 本阶段真正要达成的是**可开关**，这一点不需要搬文件就能做到，且已由测试锁定。
+
+因此能力层是这样组织的：
+
+```
+src/main/capabilities/index.js
+  CAPABILITIES = [
+    { id, name, description, defaultEnabled, channels: [...], build(deps), register(deps) }
+  ]
+```
+
+- `channels` 是**声明的单一事实来源**：`test/ipc-contract.test.js` 断言
+  「声明集合」与「真实模块注册的集合」逐一相等，因此声明不会悄悄过期。
+- `loadAll(deps)` 按 `config.capabilities[id]`（布尔，或 `{enabled:boolean}`）
+  决定是否注册；关闭的能力**不会注册任何通道**，加载失败也只用日志记录、
+  不拖垮应用启动。
+- 新增通道 `capability-list` / `capability-enable`，并同步 `preload.js`
+  （`capabilityList` / `capabilityEnable`），使开关可由界面驱动。
+- `config.js` 的 `migrateConfig` 只保证 `capabilities` 是对象；
+  缺省值由能力层按 `defaultEnabled` 判定 —— **老配置无需任何改动**。
+
+**当前六个能力与其通道数**
+
+| id | 名称 | 通道数 |
+| --- | --- | --- |
+| `core-window` | 窗口与桌宠壳层 | 34 |
+| `file-manager` | 文件管理（含图标） | 12 |
+| `file-dialog` | 目录选择与打开 | 7 |
+| `partitions` | 分区与路径 + 能力配置通道 | 17 |
+| `system` | 系统能力（音量/网络/电源/任务栏等） | 23 |
+| | **合计** | **93** |
+
+**检测**：
+- 新增 `test/ipc-contract.test.js` **18 项断言**，锁定三条契约：
+  ① 声明 ↔ 真实注册（逐能力集合相等）；② 能力间不重复声明、并集覆盖全部；
+  ③ 能力层 ↔ preload 一一对应（无孤立、无幽灵）。
+  另覆盖启停语义：缺省全启用、`false` 关闭、`{enabled:false}` 关闭、
+  配置缺失不崩、`loadAll` 真的跳过被关闭的能力。
+- 自检脚本 12 → **13 个**，断言 317 → **340 项**
+- `npm test` 13 个脚本全绿；`npm run lint` 全绿；`node --check` 47 个文件通过
+
+**明确未完成**
+
+- **5.2 文件搬迁未做**（理由见上）。这让 `ipc/` 与 `capabilities/` 之间多了一层
+  间接：新增通道时必须同时更新 `capabilities/index.js` 的 `channels` 声明，
+  否则契约测试会失败 —— 这是**有意的强约束**，不是遗漏。
+- **5.4 设置页的能力管理界面未做**：通道（`capabilityList` / `capabilityEnable`）
+  已经就绪且可测，但界面未接。因此「关闭某能力」目前需要手改 config.json。
+- **5.1 未把 `ipc/window.js` 中的壳层通道单独拆成 `ipc/core.js`**：
+  34 个通道里只有 `get-window-bounds` 渲染层未使用，其余全部在用，
+  拆出一个 `core.js` 只是文件划分、不产生行为差异，故与搬迁一并留到后续。
+- **5.5 `docs/CAPABILITIES.md` 未写**：规范内容目前以
+  `src/main/capabilities/index.js` 的文件头注释形式存在。
+
+**提交**：`refactor: 阶段5 主进程能力层（声明式通道 + 可开关）加契约自检`
 
 ---
 
@@ -452,7 +514,7 @@ if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 ✅ 阶段  0:  refactor: 阶段0 抽取共用 UI 原语（模态框/Toast）                   [6eda6a9]
 ✅ 阶段  1:  refactor: 抽出 quick-upload 能力并引入能力注册表                   [0861cba]
 ✅ 阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁                               [733b907] [737c987]
-   阶段  3:  feat: 桌宠动画状态机与皮肤包格式
+✅ 阶段  3:  feat: 桌宠动画状态机与皮肤包格式                                   [5db2e0a]
    阶段  4:  fix: 重构吸附几何计算与锚点上报
    阶段  5:  refactor: 主进程按能力分家
    阶段  6:  refactor: 配置命名空间化 v1→v2 迁移

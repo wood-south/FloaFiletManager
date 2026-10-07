@@ -67,6 +67,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 能力层（可插拔业务）自己的配置命名空间
   capabilityGet: (capabilityId, key) => ipcRenderer.invoke('capability-get', { capabilityId, key }),
   capabilitySet: (capabilityId, key, value) => ipcRenderer.invoke('capability-set', { capabilityId, key, value }),
+  // 主进程能力清单与启用开关（阶段 5：关闭的能力不注册其 IPC 通道，重启生效）
+  capabilityList: () => ipcRenderer.invoke('capability-list'),
+  capabilityEnable: (capabilityId, enabled) => ipcRenderer.invoke('capability-enable', { capabilityId, enabled }),
   startDrag: (filePath, iconDataUrl) => ipcRenderer.invoke('start-drag', { filePath, iconDataUrl }),
   systemAction: (action) => ipcRenderer.invoke('system-action', action),
   toggleTaskbar: (hide) => ipcRenderer.invoke('toggle-taskbar', hide),

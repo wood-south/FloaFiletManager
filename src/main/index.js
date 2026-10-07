@@ -27,12 +27,7 @@ if (!gotTheLock) {
   const windows = require('./windows');
   const { iconCache, loadIconCache, saveIconCache, scheduleSaveIconCache } = require('./services/icon-cache');
   const iconExtractor = require('./services/icon-extractor');
-  const ipcConfig = require('./ipc/config');
-  const ipcFiles = require('./ipc/files');
-  const ipcIcons = require('./ipc/icons');
-  const ipcWindow = require('./ipc/window');
-  const ipcDialog = require('./ipc/dialog');
-  const ipcSystem = require('./ipc/system');
+  const capabilities = require('./capabilities');
 
   app.on('second-instance', () => {
     const floatWindow = windows.getFloatWindow();
@@ -92,27 +87,15 @@ if (!gotTheLock) {
     restoreTaskbar();
   });
 
-  // 注册 IPC handlers
-  ipcConfig.register({ loadConfig, saveConfig });
-  ipcFiles.register({ loadConfig, getFileManagerWindow: windows.getFileManagerWindow });
-  ipcIcons.register({ iconCache, scheduleSaveIconCache, iconExtractor });
-  ipcWindow.register({
+  // 注册 IPC handlers：按能力层声明加载（配置里可关闭某个能力 → 其通道不再注册）
+  capabilities.loadAll({
     loadConfig,
     saveConfig,
     screen,
     app,
-    getFloatWindow: windows.getFloatWindow,
-    getFileManagerWindow: windows.getFileManagerWindow,
-    getAlwaysOnTopEnabled: windows.getAlwaysOnTopEnabled,
-    setAlwaysOnTopEnabled: windows.setAlwaysOnTopEnabled,
-    getDockAlwaysOnTopEnabled: windows.getDockAlwaysOnTopEnabled,
-    setDockAlwaysOnTopEnabled: windows.setDockAlwaysOnTopEnabled
-  });
-  ipcDialog.register({
-    createFileManagerWindow: windows.createFileManagerWindow,
-    getFileManagerWindow: windows.getFileManagerWindow,
-    getDockWindow: windows.getDockWindow,
+    windows,
+    iconCache,
+    scheduleSaveIconCache,
     iconExtractor
   });
-  ipcSystem.register({ loadConfig, saveConfig, getDockWindow: windows.getDockWindow });
 }

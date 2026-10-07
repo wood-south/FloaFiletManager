@@ -122,6 +122,14 @@ function migrateConfig(config) {
     changed = true;
   }
 
+  // 能力层开关（阶段 5）：缺省视为「全部启用」，因此老配置不需要任何改动。
+  // 这里只保证它是个对象，具体缺省值由能力层按 defaultEnabled 判定。
+  if (!config.capabilities || typeof config.capabilities !== 'object' ||
+      Array.isArray(config.capabilities)) {
+    config.capabilities = {};
+    changed = true;
+  }
+
   if (changed) {
     saveConfig(config);
   }
