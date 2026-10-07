@@ -6,7 +6,8 @@
   -webkit-user-select: none;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -29,7 +30,12 @@ html, body {
   cursor: var(--pet-cursor, grab);
   z-index: 10;
   transform-origin: center center;
-  transition: left 0.35s ease, right 0.35s ease, top 0.35s ease, bottom 0.35s ease, transform 0.2s ease;
+  transition:
+    left 0.35s ease,
+    right 0.35s ease,
+    top 0.35s ease,
+    bottom 0.35s ease,
+    transform 0.2s ease;
 }
 
 .pet-body:hover {
@@ -42,20 +48,56 @@ html, body {
 }
 
 /* 贴边定位：只改位置 */
-.pet-body.snap-left  { left: auto; right: 25px; top: 50%;  transform: translate(0, -50%); }
-.pet-body.snap-right { left: 25px;  right: auto; top: 50%;  transform: translate(0, -50%); }
-.pet-body.snap-top   { top: auto;  bottom: 25px; left: 50%; transform: translate(-50%, 0); }
-.pet-body.snap-bottom{ top: 25px;  bottom: auto; left: 50%; transform: translate(-50%, 0); }
+.pet-body.snap-left {
+  left: auto;
+  right: 25px;
+  top: 50%;
+  transform: translate(0, -50%);
+}
+.pet-body.snap-right {
+  left: 25px;
+  right: auto;
+  top: 50%;
+  transform: translate(0, -50%);
+}
+.pet-body.snap-top {
+  top: auto;
+  bottom: 25px;
+  left: 50%;
+  transform: translate(-50%, 0);
+}
+.pet-body.snap-bottom {
+  top: 25px;
+  bottom: auto;
+  left: 50%;
+  transform: translate(-50%, 0);
+}
 
-.pet-body.snap-left:hover   { transform: translate(0, -52%) scale(1.05); }
-.pet-body.snap-right:hover  { transform: translate(0, -52%) scale(1.05); }
-.pet-body.snap-top:hover    { transform: translate(-50%, 0) scale(1.05); }
-.pet-body.snap-bottom:hover { transform: translate(-50%, 0) scale(1.05); }
+.pet-body.snap-left:hover {
+  transform: translate(0, -52%) scale(1.05);
+}
+.pet-body.snap-right:hover {
+  transform: translate(0, -52%) scale(1.05);
+}
+.pet-body.snap-top:hover {
+  transform: translate(-50%, 0) scale(1.05);
+}
+.pet-body.snap-bottom:hover {
+  transform: translate(-50%, 0) scale(1.05);
+}
 
-.pet-body.snap-left.dragging   { transform: translate(0, -50%) scale(0.95); }
-.pet-body.snap-right.dragging  { transform: translate(0, -50%) scale(0.95); }
-.pet-body.snap-top.dragging    { transform: translate(-50%, 0) scale(0.95); }
-.pet-body.snap-bottom.dragging { transform: translate(-50%, 0) scale(0.95); }
+.pet-body.snap-left.dragging {
+  transform: translate(0, -50%) scale(0.95);
+}
+.pet-body.snap-right.dragging {
+  transform: translate(0, -50%) scale(0.95);
+}
+.pet-body.snap-top.dragging {
+  transform: translate(-50%, 0) scale(0.95);
+}
+.pet-body.snap-bottom.dragging {
+  transform: translate(-50%, 0) scale(0.95);
+}
 
 /* 贴边旋转在 pet-avatar，呼吸在 pet-avatar-spin 避免冲突 */
 .pet-avatar {
@@ -73,10 +115,18 @@ html, body {
   animation: pet-breathe 3s ease-in-out infinite;
 }
 
-.pet-body.snap-left .pet-avatar  { transform: rotate(90deg); }
-.pet-body.snap-right .pet-avatar { transform: rotate(-90deg); }
-.pet-body.snap-top .pet-avatar   { transform: rotate(180deg); }
-.pet-body.snap-bottom .pet-avatar{ transform: rotate(0deg); }
+.pet-body.snap-left .pet-avatar {
+  transform: rotate(90deg);
+}
+.pet-body.snap-right .pet-avatar {
+  transform: rotate(-90deg);
+}
+.pet-body.snap-top .pet-avatar {
+  transform: rotate(180deg);
+}
+.pet-body.snap-bottom .pet-avatar {
+  transform: rotate(0deg);
+}
 
 /* Dock 吸附朝向：旋转宠物使其正立。
    对应关系（用户截图核对）：
@@ -85,10 +135,18 @@ html, body {
    左右方向（±90°）经实测正确，保持不变。
    说明：dock-* 的命名指"面板相对宠物的位置"，
    .dock-top 表示面板在下方（宠物贴在面板上方）。 */
-.pet-body.dock-top .pet-avatar    { transform: rotate(0deg); }
-.pet-body.dock-bottom .pet-avatar { transform: rotate(180deg); }
-.pet-body.dock-left .pet-avatar   { transform: rotate(-90deg); }
-.pet-body.dock-right .pet-avatar  { transform: rotate(90deg); }
+.pet-body.dock-top .pet-avatar {
+  transform: rotate(0deg);
+}
+.pet-body.dock-bottom .pet-avatar {
+  transform: rotate(180deg);
+}
+.pet-body.dock-left .pet-avatar {
+  transform: rotate(-90deg);
+}
+.pet-body.dock-right .pet-avatar {
+  transform: rotate(90deg);
+}
 
 /* 菜单：关闭时淡出，展开时出现 */
 .menu-ring,
@@ -101,29 +159,49 @@ html, body {
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+  transition:
+    opacity 0.2s ease,
+    visibility 0s linear 0.2s;
 }
 
-.menu-ring { z-index: 5; }
-.quit-ring { z-index: 6; }
+.menu-ring {
+  z-index: 5;
+}
+.quit-ring {
+  z-index: 6;
+}
 
 .menu-ring.open,
 .quit-ring.open {
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
-  transition: opacity 0.3s ease, visibility 0s;
+  transition:
+    opacity 0.3s ease,
+    visibility 0s;
 }
 
 /* 贴边时菜单往外移动避免遮挡 */
 .pet-body.snap-left .menu-ring,
-.pet-body.snap-left .quit-ring  { right: 45px; left: auto; }
+.pet-body.snap-left .quit-ring {
+  right: 45px;
+  left: auto;
+}
 .pet-body.snap-right .menu-ring,
-.pet-body.snap-right .quit-ring { left: 45px; right: auto; }
+.pet-body.snap-right .quit-ring {
+  left: 45px;
+  right: auto;
+}
 .pet-body.snap-top .menu-ring,
-.pet-body.snap-top .quit-ring   { bottom: 45px; top: auto; }
+.pet-body.snap-top .quit-ring {
+  bottom: 45px;
+  top: auto;
+}
 .pet-body.snap-bottom .menu-ring,
-.pet-body.snap-bottom .quit-ring{ top: 45px; bottom: auto; }
+.pet-body.snap-bottom .quit-ring {
+  top: 45px;
+  bottom: auto;
+}
 
 .pet-svg {
   width: 100%;
@@ -132,8 +210,13 @@ html, body {
 }
 
 @keyframes pet-breathe {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.03); }
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.03);
+  }
 }
 
 .pet-shadow {
@@ -141,8 +224,15 @@ html, body {
 }
 
 @keyframes shadow-pulse {
-  0%, 100% { transform: scaleX(1); opacity: 0.15; }
-  50% { transform: scaleX(0.95); opacity: 0.12; }
+  0%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.15;
+  }
+  50% {
+    transform: scaleX(0.95);
+    opacity: 0.12;
+  }
 }
 
 .eyes {
@@ -151,8 +241,15 @@ html, body {
 }
 
 @keyframes blink {
-  0%, 45%, 55%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(0.1); }
+  0%,
+  45%,
+  55%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.1);
+  }
 }
 
 .ear {
@@ -160,24 +257,39 @@ html, body {
   transition: transform 0.3s ease;
 }
 
-.pet-body:hover .ear-left  { transform: rotate(-8deg); }
-.pet-body:hover .ear-right { transform: rotate(8deg); }
+.pet-body:hover .ear-left {
+  transform: rotate(-8deg);
+}
+.pet-body:hover .ear-right {
+  transform: rotate(8deg);
+}
 
 .pupil {
   animation: pupil-move 5s ease-in-out infinite;
 }
 
 @keyframes pupil-move {
-  0%, 40%, 60%, 100% { transform: translateX(0); }
-  50% { transform: translateX(1.5px); }
+  0%,
+  40%,
+  60%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(1.5px);
+  }
 }
 
 .paw {
   transition: transform 0.3s ease;
 }
 
-.pet-body:hover .paw-left  { transform: translateY(-2px); }
-.pet-body:hover .paw-right { transform: translateY(-2px); }
+.pet-body:hover .paw-left {
+  transform: translateY(-2px);
+}
+.pet-body:hover .paw-right {
+  transform: translateY(-2px);
+}
 
 /* ======== 动画状态类（阶段 3 · A 层） ========
    由 renderer/pet/behavior.js 的状态机贴到 .pet-body 上，CSS 按状态决定播什么。
@@ -190,52 +302,109 @@ html, body {
    收敛到状态类之后，同一时刻只有一个状态生效。 */
 
 /* 待机：与接入前完全一致 */
-.pet-body.state-idle .pet-avatar-spin { animation: pet-breathe 3s ease-in-out infinite; }
-.pet-body.state-idle .pet-shadow      { animation: shadow-pulse 3s ease-in-out infinite; }
-.pet-body.state-idle .eyes            { animation: blink 4s ease-in-out infinite; }
-.pet-body.state-idle .pupil           { animation: pupil-move 5s ease-in-out infinite; }
+.pet-body.state-idle .pet-avatar-spin {
+  animation: pet-breathe 3s ease-in-out infinite;
+}
+.pet-body.state-idle .pet-shadow {
+  animation: shadow-pulse 3s ease-in-out infinite;
+}
+.pet-body.state-idle .eyes {
+  animation: blink 4s ease-in-out infinite;
+}
+.pet-body.state-idle .pupil {
+  animation: pupil-move 5s ease-in-out infinite;
+}
 
 /* 被拖动：停止呼吸/眨眼（拖动时视觉应「绷住」），并给一个被抓起的挤压感 */
-.pet-body.state-drag .pet-avatar-spin { animation: none; }
-.pet-body.state-drag .pet-shadow      { animation: none; opacity: 0.1; }
-.pet-body.state-drag .eyes            { animation: none; }
-.pet-body.state-drag .pupil           { animation: none; }
+.pet-body.state-drag .pet-avatar-spin {
+  animation: none;
+}
+.pet-body.state-drag .pet-shadow {
+  animation: none;
+  opacity: 0.1;
+}
+.pet-body.state-drag .eyes {
+  animation: none;
+}
+.pet-body.state-drag .pupil {
+  animation: none;
+}
 
 /* 贴边/吸附：同样停掉呼吸（避免与贴边旋转的 transform 抢同一层） */
-.pet-body.state-snap .pet-avatar-spin { animation: none; }
-.pet-body.state-snap .pet-shadow      { animation: none; }
-.pet-body.state-snap .eyes            { animation: blink 4s ease-in-out infinite; }
-.pet-body.state-snap .pupil           { animation: pupil-move 5s ease-in-out infinite; }
+.pet-body.state-snap .pet-avatar-spin {
+  animation: none;
+}
+.pet-body.state-snap .pet-shadow {
+  animation: none;
+}
+.pet-body.state-snap .eyes {
+  animation: blink 4s ease-in-out infinite;
+}
+.pet-body.state-snap .pupil {
+  animation: pupil-move 5s ease-in-out infinite;
+}
 
 /* 被点击：一次性短反馈（duration 由状态表给出，到点自动回落 idle） */
-.pet-body.state-interact .pet-avatar-spin { animation: pet-interact 0.6s ease-out 1; }
+.pet-body.state-interact .pet-avatar-spin {
+  animation: pet-interact 0.6s ease-out 1;
+}
 
 @keyframes pet-interact {
-  0%   { transform: scale(1, 1); }
-  35%  { transform: scale(1.06, 0.94); }
-  70%  { transform: scale(0.98, 1.02); }
-  100% { transform: scale(1, 1); }
+  0% {
+    transform: scale(1, 1);
+  }
+  35% {
+    transform: scale(1.06, 0.94);
+  }
+  70% {
+    transform: scale(0.98, 1.02);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
 }
 
 /* 庆祝：一次性（预留给「上传成功」等事件，见 ROADMAP 阶段 3 说明） */
-.pet-body.state-celebrate .pet-avatar-spin { animation: pet-celebrate 1.2s ease-in-out 1; }
+.pet-body.state-celebrate .pet-avatar-spin {
+  animation: pet-celebrate 1.2s ease-in-out 1;
+}
 
 @keyframes pet-celebrate {
-  0%   { transform: translateY(0) scale(1); }
-  25%  { transform: translateY(-4px) scale(1.04); }
-  50%  { transform: translateY(0) scale(1); }
-  75%  { transform: translateY(-2px) scale(1.02); }
-  100% { transform: translateY(0) scale(1); }
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  25% {
+    transform: translateY(-4px) scale(1.04);
+  }
+  50% {
+    transform: translateY(0) scale(1);
+  }
+  75% {
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* 走路：预留给阶段 3 后续（当前无驱动源，仅定义视觉） */
-.pet-body.state-walk .pet-avatar-spin { animation: pet-breathe 1.2s ease-in-out infinite; }
+.pet-body.state-walk .pet-avatar-spin {
+  animation: pet-breathe 1.2s ease-in-out infinite;
+}
 
 /* 睡觉：呼吸放慢、不眨眼 */
-.pet-body.state-sleep .pet-avatar-spin { animation: pet-breathe 5s ease-in-out infinite; }
-.pet-body.state-sleep .pet-shadow      { animation: shadow-pulse 5s ease-in-out infinite; }
-.pet-body.state-sleep .eyes            { animation: none; }
-.pet-body.state-sleep .pupil           { animation: none; }
+.pet-body.state-sleep .pet-avatar-spin {
+  animation: pet-breathe 5s ease-in-out infinite;
+}
+.pet-body.state-sleep .pet-shadow {
+  animation: shadow-pulse 5s ease-in-out infinite;
+}
+.pet-body.state-sleep .eyes {
+  animation: none;
+}
+.pet-body.state-sleep .pupil {
+  animation: none;
+}
 
 /* ======== 菜单按钮样式 ======== */
 
@@ -254,15 +423,32 @@ html, body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.7);
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
 }
 
 /* 按钮位置固定，收回时原地淡出不聚集到中心 */
-.menu-ring .menu-btn:nth-child(1) { top: -48px; left: 0; }
-.menu-ring .menu-btn:nth-child(2) { top: 0; left: 48px; }
-.menu-ring .menu-btn:nth-child(3) { top: 48px; left: 0; }
-.menu-ring .menu-btn:nth-child(4) { top: 0; left: -48px; }
-.quit-ring .quit-btn { top: -48px; left: 0; }
+.menu-ring .menu-btn:nth-child(1) {
+  top: -48px;
+  left: 0;
+}
+.menu-ring .menu-btn:nth-child(2) {
+  top: 0;
+  left: 48px;
+}
+.menu-ring .menu-btn:nth-child(3) {
+  top: 48px;
+  left: 0;
+}
+.menu-ring .menu-btn:nth-child(4) {
+  top: 0;
+  left: -48px;
+}
+.quit-ring .quit-btn {
+  top: -48px;
+  left: 0;
+}
 
 .menu-btn svg {
   width: 15px;
@@ -281,21 +467,42 @@ html, body {
 }
 
 /* 展开时只改透明度和缩放，位置已固定 */
-.menu-ring.open .menu-btn { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-.menu-ring.open .menu-btn:nth-child(1) { transition-delay: 0s; }
-.menu-ring.open .menu-btn:nth-child(2) { transition-delay: 0.05s; }
-.menu-ring.open .menu-btn:nth-child(3) { transition-delay: 0.1s; }
-.menu-ring.open .menu-btn:nth-child(4) { transition-delay: 0.15s; }
+.menu-ring.open .menu-btn {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.menu-ring.open .menu-btn:nth-child(1) {
+  transition-delay: 0s;
+}
+.menu-ring.open .menu-btn:nth-child(2) {
+  transition-delay: 0.05s;
+}
+.menu-ring.open .menu-btn:nth-child(3) {
+  transition-delay: 0.1s;
+}
+.menu-ring.open .menu-btn:nth-child(4) {
+  transition-delay: 0.15s;
+}
 
-.menu-btn.active { background: #667eea; }
-.menu-btn.active svg { color: white; }
+.menu-btn.active {
+  background: #667eea;
+}
+.menu-btn.active svg {
+  color: white;
+}
 
 /* 「回收站模式」按钮的高亮与脉冲动画属 quick-upload 能力，
    见 renderer/capabilities/quick-upload/style.css */
 
-.quit-btn { background: rgba(230, 70, 70, 0.95); }
-.quit-btn svg { color: white; }
-.quit-btn:hover { background: #e64646; }
+.quit-btn {
+  background: rgba(230, 70, 70, 0.95);
+}
+.quit-btn svg {
+  color: white;
+}
+.quit-btn:hover {
+  background: #e64646;
+}
 
 .quit-ring.open .quit-btn {
   opacity: 1;
@@ -325,8 +532,13 @@ html, body {
   animation: pulse 1s infinite;
 }
 
-.drop-overlay.drag-over { display: flex; }
-.drop-overlay svg { width: 24px; height: 24px; }
+.drop-overlay.drag-over {
+  display: flex;
+}
+.drop-overlay svg {
+  width: 24px;
+  height: 24px;
+}
 
 .drop-overlay.recycle-mode {
   background: rgba(239, 68, 68, 0.85);
@@ -334,7 +546,11 @@ html, body {
 }
 
 @keyframes pulse {
-  0%, 100% { transform: translate(-50%, -50%) scale(1); }
-  50% { transform: translate(-50%, -50%) scale(1.08); }
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.08);
+  }
 }
-

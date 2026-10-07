@@ -6,7 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "lint": "eslint main.js preload.js \"renderer/**/*.js\" \"src/main/**/*.js\"",
+    "lint": "eslint main.js preload.js \"renderer/**/*.js\" \"src/main/**/*.js\" && npm run lint:style",
+    "lint:style": "prettier --check \"renderer/**/*.css\" \"renderer/**/*.html\"",
     "lint:fix": "eslint main.js preload.js \"renderer/**/*.js\" \"src/main/**/*.js\" --fix",
     "test": "node test/run-checks.js",
     "check": "npm run lint && npm test",

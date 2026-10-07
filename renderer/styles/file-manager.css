@@ -4,7 +4,8 @@
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   width: 100%;
   height: 100%;
   background: transparent;
@@ -178,7 +179,9 @@ html, body {
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .upload-btn:hover {
@@ -414,8 +417,13 @@ html, body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 0.8; }
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .file-icon.folder {
@@ -643,7 +651,6 @@ html, body {
   width: 12px;
   height: 12px;
 }
-
 
 /* 主内容区域 */
 .fm-content {
