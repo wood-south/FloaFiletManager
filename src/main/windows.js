@@ -1,6 +1,11 @@
 const { BrowserWindow, screen } = require('electron');
 const path = require('path');
 const { loadConfig, rootDir } = require('./config');
+const { createDisplayOps } = require('./display');
+
+/* 多显示器：所有几何钳制都走「窗口/矩形所在的那块屏」，
+   而不是写死主屏（阶段 7 修复的缺口）。 */
+const displayOps = createDisplayOps(screen);
 
 let floatWindow = null;
 let fileManagerWindow = null;
@@ -39,8 +44,8 @@ function loadPersistedState() {
 
 function createFloatWindow() {
   const config = loadConfig();
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { workArea } = primaryDisplay;
+  // 新建窗口时还没有 bounds，用鼠标所在屏（用户在哪儿操作就出现在哪块屏）
+  const { workArea } = displayOps.forBounds(null);
 
   const size = 160;
   let x = config.floatPosition?.x ?? (workArea.width - size - 50);
@@ -87,7 +92,8 @@ function createFileManagerWindow() {
   }
 
   const floatBounds = floatWindow.getBounds();
-  const { workArea } = screen.getPrimaryDisplay();
+  // 文件管理窗口贴着浮窗出现，因此按**浮窗所在屏**取工作区
+  const { workArea } = displayOps.forBounds(floatBounds);
   const fmWidth = 900;
   const fmHeight = 600;
 
@@ -138,16 +144,22 @@ function createDockWindow() {
     return dockWindow;
   }
 
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { workArea } = primaryDisplay;
   const dockWidth = 800;
   // 初始窗口足够大，内容加载后自动适配
   const dockHeight = 200;
-  // 读取持久化的位置（基于底部锚点），如果没有则底部居中
+
+  // Dock 首次创建：优先用已保存的位置判断它属于哪块屏，
+  // 没有保存过则用鼠标所在屏（与浮窗一致）
   const cfg = loadConfig();
-  let dockX, dockY;
   const hasSaved = cfg.dockX !== null && cfg.dockX !== undefined &&
     cfg.dockBottom !== null && cfg.dockBottom !== undefined;
+  const savedProbe = hasSaved
+    ? { x: cfg.dockX, y: cfg.dockBottom - dockHeight, width: dockWidth, height: dockHeight }
+    : null;
+  const { workArea } = displayOps.forBounds(savedProbe);
+
+  // 读取持久化的位置（基于底部锚点），如果没有则底部居中
+  let dockX, dockY;
   if (hasSaved) {
     dockX = cfg.dockX;
     dockY = cfg.dockBottom - dockHeight;
@@ -155,11 +167,13 @@ function createDockWindow() {
     if (dockX + dockWidth < workArea.x || dockX > workArea.x + workArea.width ||
         dockY < workArea.y || dockY + dockHeight > workArea.y + workArea.height + 60) {
       dockX = Math.round(workArea.x + (workArea.width - dockWidth) / 2);
-      dockY = workArea.height - dockHeight + 20;
+      dockY = workArea.y + workArea.height - dockHeight + 20;
     }
   } else {
     dockX = Math.round(workArea.x + (workArea.width - dockWidth) / 2);
-    dockY = workArea.height - dockHeight + 20;
+    // 注意：必须用 workArea.y + workArea.height。
+    // 旧写法只取 workArea.height，在副屏（workArea.y ≠ 0）上会把 Dock 放到错误的位置。
+    dockY = workArea.y + workArea.height - dockHeight + 20;
   }
 
   dockWindow = new BrowserWindow({
@@ -250,8 +264,9 @@ function createSettingsWindow() {
     return settingsWindow;
   }
 
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { workArea } = primaryDisplay;
+  // 设置窗口：居中于浮窗所在屏，而不是写死主屏
+  const floatBounds = floatWindow && !floatWindow.isDestroyed() ? floatWindow.getBounds() : null;
+  const { workArea } = displayOps.forBounds(floatBounds);
   const w = 440;
   const h = 560;
 

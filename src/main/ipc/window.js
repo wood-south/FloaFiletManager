@@ -1,5 +1,21 @@
 const { ipcMain, shell, BrowserWindow } = require('electron');
 const { decide, visualGapForSide } = require('../snap');
+const { createDisplayOps } = require('../display');
+
+/* 多显示器（阶段 7）：几何钳制一律按「窗口所在显示器」的工作区，
+   不再写死主屏 —— 否则把 Dock/浮窗拖到副屏后会被按主屏工作区拉回主屏。
+   screen 是 register() 的入参（不是模块级变量），因此 displayOps 在 register 内创建。 */
+let displayOps = null;
+
+/** 取某个窗口所在显示器的工作区（窗口不可用时按鼠标所在屏兜底） */
+function workAreaOfWin(win) {
+  let bounds = null;
+  try {
+    if (win && !win.isDestroyed()) bounds = win.getBounds();
+  } catch (_) { /* 用兜底 */ }
+  return displayOps.workAreaFor(bounds);
+}
+
 
 let savedSnapEdges = null;
 let savedFloatBounds = null;
@@ -70,11 +86,14 @@ function getSnapEdges(bounds, workArea) {
 }
 
 function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFileManagerWindow, getAlwaysOnTopEnabled, setAlwaysOnTopEnabled, getDockAlwaysOnTopEnabled, setDockAlwaysOnTopEnabled }) {
+  // screen 由调用方注入，多显示器的选屏逻辑在这里建立
+  displayOps = createDisplayOps(screen);
+
   ipcMain.handle('move-window', (event, deltaX, deltaY) => {
     const floatWindow = getFloatWindow();
     if (!floatWindow) return;
     const bounds = floatWindow.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(floatWindow);
     let newX = bounds.x + deltaX;
     let newY = bounds.y + deltaY;
     const minVisible = 60;
@@ -88,7 +107,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const floatWindow = getFloatWindow();
     if (!floatWindow) return false;
     const bounds = floatWindow.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(floatWindow);
 
     const edgeThreshold = 20;
     const visibleSize = 100;
@@ -171,7 +190,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
   ipcMain.handle('unsnap-window', () => {
     const floatWindow = getFloatWindow();
     if (!floatWindow) return;
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(floatWindow);
     const bounds = floatWindow.getBounds();
     const config = loadConfig();
     savedSnapEdges = config.snapEdges || null;
@@ -194,7 +213,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const floatWindow = getFloatWindow();
     if (!floatWindow || !savedSnapEdges) return;
     const bounds = floatWindow.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(floatWindow);
     const visibleSize = 100;
     const w = bounds.width;
     const h = bounds.height;
@@ -441,7 +460,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     if (savedFloatBounds) return true;
 
     savedFloatBounds = floatWindow.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(floatWindow);
 
     // 以浮窗中心为中心扩展
     const centerX = savedFloatBounds.x + savedFloatBounds.width / 2;
@@ -571,7 +590,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const win = getDockWindow();
     if (!win) return;
     const bounds = win.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(win);
     let newX = bounds.x + deltaX;
     let newY = bounds.y + deltaY;
 
@@ -603,7 +622,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const win = getFileManagerWindow();
     if (!win || win.isDestroyed()) return false;
     const bounds = win.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(win);
     let newX = bounds.x + deltaX;
     let newY = bounds.y + deltaY;
     // 至少保留一部分窗口在屏幕内，避免被拖丢
@@ -640,7 +659,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const win = getSettingsWindow();
     if (!win) return;
     const bounds = win.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(win);
     let newX = bounds.x + deltaX;
     let newY = bounds.y + deltaY;
     newX = Math.max(workArea.x, Math.min(newX, workArea.x + workArea.width - bounds.width));
@@ -653,7 +672,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const { getDockWindow } = require('../windows');
     const win = getDockWindow();
     if (!win) return false;
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(win);
     const dockWidth = 800;
     // 初始占位高度，autoFitDockWindow 会在加载后自动适配
     const dockHeight = 120;
@@ -671,7 +690,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const win = getDockWindow();
     if (!win) return false;
     const bounds = win.getBounds();
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(win);
     const targetH = Math.round(height);
     // 保存原始边界（仅首次扩展时保存）
     if (!savedDockBounds) {
@@ -706,7 +725,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const { getDockWindow } = require('../windows');
     const win = getDockWindow();
     if (!win) return false;
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(win);
     const newW = Math.max(180, Math.round(width));
     const newH = Math.max(60, Math.round(height));
 
@@ -739,7 +758,7 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     const { getDockWindow } = require('../windows');
     const win = getDockWindow();
     if (!win) return false;
-    const { workArea } = screen.getPrimaryDisplay();
+    const workArea = workAreaOfWin(win);
     const bounds = win.getBounds();
     const newX = Math.round(workArea.x + (workArea.width - bounds.width) / 2);
     win.setPosition(newX, bounds.y);

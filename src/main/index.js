@@ -29,6 +29,9 @@ if (!gotTheLock) {
   const iconExtractor = require('./services/icon-extractor');
   const capabilities = require('./capabilities');
 
+  /** 显示器变化监听（阶段 7）：应用退出时解除 */
+  let displayWatcher = null;
+
   app.on('second-instance', () => {
     const floatWindow = windows.getFloatWindow();
     if (floatWindow) {
@@ -71,6 +74,17 @@ if (!gotTheLock) {
     if (windows.getDockVisible()) {
       windows.showDockWindow();
     }
+    // 显示器变化（拔掉副屏等）时，把完全跑到屏幕外的窗口收回可视区，
+    // 否则窗口会停在已不存在的坐标上，既看不见也点不到。
+    displayWatcher = require('./display').watchDisplayChanges({
+      screen,
+      getFloatableWindows: () => [
+        windows.getFloatWindow(),
+        windows.getDockWindow(),
+        windows.getFileManagerWindow(),
+        windows.getSettingsWindow()
+      ]
+    });
     // 注意：音量控制 dll 改为首次使用时再按需编译（见 system.js），
     // 不在启动时运行 csc.exe，避免触发杀毒软件对「运行时编译代码」的启发式拦截导致启动卡顿/CPU 占满。
   });
@@ -83,6 +97,7 @@ if (!gotTheLock) {
   });
 
   app.on('will-quit', () => {
+    if (displayWatcher) displayWatcher.dispose();
     saveIconCache();
     restoreTaskbar();
   });

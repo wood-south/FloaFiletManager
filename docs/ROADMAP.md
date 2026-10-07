@@ -521,16 +521,54 @@ id 就叫 `dock`，而 v2 又用 `dock` 作为 `dockSettings` 的分组名。两
 
 ### 阶段 7：Dock 优化
 
-| 项 | 内容 |
-| --- | --- |
-| 7.1 | `applyIconSizes` / `autoFitDockWindow` 的内联样式改为 CSS 变量（移除批量行内写） |
-| 7.2 | `--dock-*` 变量从 `#dockContainer` 提到 `:root`（主题包换肤前提） |
-| 7.3 | 磁贴放大（按距离缩放邻位，现仅一级邻居） |
-| 7.4 | 自动隐藏 + 触底唤出；启动跳动动画；通知徽标 |
-| 7.5 | 多显示器支持（`screen.getAllDisplays` + `display-metrics-changed` + `display-removed`） |
-| 7.6 | 快捷图标拖拽排序 |
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 7.5 | **多显示器支持**（`getAllDisplays` + 按窗口所在屏钳制 + 拔屏收回窗口） | ✅ `src/main/display.js` |
+| 7.1 | `applyIconSizes` / `autoFitDockWindow` 的内联样式改为 CSS 变量 | ⬜ 见下 |
+| 7.2 | `--dock-*` 变量从 `#dockContainer` 提到 `:root` | ⬜ 见下 |
+| 7.3 | 磁贴放大（按距离缩放邻位，现仅一级邻居） | ⬜ |
+| 7.4 | 自动隐藏 + 触底唤出；启动跳动动画；通知徽标 | ⬜ |
+| 7.6 | 快捷图标拖拽排序 | ⬜ |
 
-**检测**：改图标大小/数量后无布局跳变；拔掉副屏后 Dock 与桌宠位置仍正确。
+**7.5 多显示器（本轮完成，也是 ROADMAP 所指「当前的明显缺口」）**
+
+原先 **16 处**几何钳制全都基于 `screen.getPrimaryDisplay().workArea`，双屏下就是错的：
+把 Dock/浮窗拖到副屏后，仍按主屏工作区钳制，位置会被拉回主屏。
+
+新增 `src/main/display.js`，把「用哪块屏」收敛到一处，规则：
+1. 有窗口/矩形 → 取与其**交叠面积最大**的显示器（`getDisplayMatching`，含自实现退化版）
+2. 无矩形 → 取**鼠标所在**显示器
+3. 都不行 → 主显示器（兜底，保证永远有返回值）
+
+替换了 `windows.js` 的 4 处与 `ipc/window.js` 的 12 处（前者用 `forBounds` / 后者用
+`workAreaOfWin(窗口)`），并新增 `watchDisplayChanges()`：监听
+`display-metrics-changed` / `display-removed` / `display-added`，
+**把完全落在所有屏幕之外的窗口收回可视区**（副屏被拔掉时的典型场景），
+应用退出时 `dispose()`。
+
+**顺带修掉两个既有缺陷**：
+
+1. **`ipc/window.js` 里 `screen` 未定义**：`screen` 是 `register()` 的入参而非模块级变量，
+   初版把 `createDisplayOps(screen)` 写在模块顶层会直接 `ReferenceError`。
+   由 ESLint 的 `no-undef` 当场抓出（这正是阶段 2 开启该规则的收益）。
+2. **Dock 兜底位置在副屏上算错**：`createDockWindow` 回退到底部居中时用的是
+   `workArea.height - dockHeight + 20`，漏了 `workArea.y` ——
+   在副屏（`workArea.y ≠ 0`）上会把 Dock 放到错误高度。已改为
+   `workArea.y + workArea.height - …`。
+
+**检测**：新增 `test/display.test.js` **28 项断言**，覆盖选屏三档优先级、
+跨屏取交叠更大者、`screen` 抛错兜底、钳制用 `workArea` 而非 `bounds`、
+`allowAbove`（Dock 高预留区越出上沿的既有修复）、可见性判定、
+以及「副屏拔掉后只收回真正越界的窗口、仍在屏内的不动」。
+自检脚本 14 → **15 个**，断言 379 → **427 项**；
+`npm test` 全绿、`npm run lint` 全绿（`node --check` 51 个文件）。
+
+**明确未完成**：7.1 / 7.2（内联样式变量化、`--dock-*` 提到 `:root`）——
+渲染侧改动，`dock.js` 目前有 33 处内联样式写入；7.3 / 7.4 / 7.6 未做。
+本轮优先做 7.5 是因为它是**功能性缺口**（多屏下位置算错），
+而 7.1/7.2 是**可维护性改造**（为阶段 8 主题包铺路），可以安全地留到后续。
+
+**提交**：`feat: 阶段7 多显示器支持（按窗口所在屏钳制 + 拔屏收回窗口）`
 
 ---
 
@@ -579,8 +617,9 @@ id 就叫 `dock`，而 v2 又用 `dock` 作为 `dockSettings` 的分组名。两
 ✅ 阶段  3:  feat: 桌宠动画状态机与皮肤包格式                                   [5db2e0a]
    阶段  4:  fix: 重构吸附几何计算与锚点上报
 ✅ 阶段  5:  refactor: 主进程按能力分家                                         [887aa1e]
-   阶段  6:  refactor: 配置命名空间化 v1→v2 迁移
-   阶段  7:  feat: Dock 变量化、磁贴放大与多屏支持
+✅ 阶段  6:  refactor: 配置命名空间化 v1→v2 迁移                               [e801aa9]
+✅ 阶段  7:  feat: 多显示器支持（7.5，其余项待续）                              [待提交]
+   阶段  8:  feat: 本地皮肤包导入导出与商城页
    阶段  8:  feat: 本地皮肤包导入导出与商城页
    阶段  9:  chore: 测试、日志与文档收口
 ```
