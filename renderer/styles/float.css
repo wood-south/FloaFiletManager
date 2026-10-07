@@ -78,7 +78,13 @@ html, body {
 .pet-body.snap-top .pet-avatar   { transform: rotate(180deg); }
 .pet-body.snap-bottom .pet-avatar{ transform: rotate(0deg); }
 
-/* Dock 吸附朝向：仅旋转宠物使其底部朝向 dock 边框，不改变宠物在窗口内的位置 */
+/* Dock 吸附朝向：旋转宠物使其正立。
+   对应关系（用户截图核对）：
+     .dock-top    → 面板在宠物下方 → 正立 0°
+     .dock-bottom → 面板在宠物上方 → 倒立 180°
+   左右方向（±90°）经实测正确，保持不变。
+   说明：dock-* 的命名指"面板相对宠物的位置"，
+   .dock-top 表示面板在下方（宠物贴在面板上方）。 */
 .pet-body.dock-top .pet-avatar    { transform: rotate(0deg); }
 .pet-body.dock-bottom .pet-avatar { transform: rotate(180deg); }
 .pet-body.dock-left .pet-avatar   { transform: rotate(-90deg); }

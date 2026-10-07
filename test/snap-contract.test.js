@@ -218,4 +218,25 @@ ok('脱离吸附时主进程主动下发 null 朝向', () => {
     '松手脱离吸附时未下发 null，朝向会残留');
 });
 
+console.log('\n[8] Dock 朝向旋转值');
+ok('dock-top / dock-bottom 旋转对应关系正确（由截图核对确定）', () => {
+  const css = fs.readFileSync(path.join(root, 'renderer', 'styles', 'float.css'), 'utf8');
+  const topDeg = (css.match(/\.pet-body\.dock-top\s+\.pet-avatar\s*\{\s*transform:\s*rotate\((-?\d+)deg\)/) || [])[1];
+  const bottomDeg = (css.match(/\.pet-body\.dock-bottom\s+\.pet-avatar\s*\{\s*transform:\s*rotate\((-?\d+)deg\)/) || [])[1];
+  assert.ok(topDeg !== undefined, '未找到 .dock-top 旋转规则');
+  assert.ok(bottomDeg !== undefined, '未找到 .dock-bottom 旋转规则');
+  // dock-* 命名指「面板相对宠物的位置」：
+  //   .dock-top    → 面板在宠物下方 → 正立 0°
+  //   .dock-bottom → 面板在宠物上方 → 倒立 180°
+  assert.strictEqual(Number(topDeg), 0, '.dock-top 应为 0deg');
+  assert.strictEqual(Number(bottomDeg), 180, '.dock-bottom 应为 180deg');
+});
+ok('左右旋转方向保持 ±90 且互为反向', () => {
+  const css = fs.readFileSync(path.join(root, 'renderer', 'styles', 'float.css'), 'utf8');
+  const leftDeg = Number((css.match(/\.pet-body\.dock-left\s+\.pet-avatar\s*\{\s*transform:\s*rotate\((-?\d+)deg\)/) || [])[1]);
+  const rightDeg = Number((css.match(/\.pet-body\.dock-right\s+\.pet-avatar\s*\{\s*transform:\s*rotate\((-?\d+)deg\)/) || [])[1]);
+  assert.strictEqual(leftDeg, -90);
+  assert.strictEqual(rightDeg, 90);
+});
+
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
