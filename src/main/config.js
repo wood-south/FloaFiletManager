@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
+const schema = require('./config-schema');
 
 const rootDir = path.join(__dirname, '..', '..');
 
@@ -20,11 +21,54 @@ if (!fs.existsSync(userDataDir)) {
 }
 
 const configPath = path.join(userDataDir, 'config.json');
+const configBackupPath = configPath + '.bak';
+
+/** 把内存/磁盘上的配置文件统一读成「扁平视图」 */
+function readFlatConfig() {
+  const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+
+  if (schema.isV2(raw)) {
+    // v2：摊平回扁平视图（内部代码一行不用改）
+    const res = schema.decodeV2(raw);
+    if (res.warnings.length) {
+      res.warnings.forEach((w) => console.warn('[config] ' + w));
+    }
+    return res.config;
+  }
+
+  // v1：迁移到 v2。**先备份再写**，且只做一次（写盘后 version 即为 2）
+  backupOnce(raw);
+  const migrated = schema.migrateToV2(raw);
+  if (!migrated.ok) {
+    console.error('[config] v1→v2 迁移失败，按原结构使用（不会写盘覆盖）');
+    return raw;
+  }
+  migrated.warnings.forEach((w) => console.warn('[config] ' + w));
+  try {
+    fs.writeFileSync(configPath + '.tmp', JSON.stringify(migrated.config, null, 2));
+    fs.renameSync(configPath + '.tmp', configPath);
+    console.log('[config] 已迁移配置结构 v1 → v2（备份: config.json.bak）');
+  } catch (e) {
+    // 写盘失败不影响本次运行：内存里已是正确数据，下次启动再试
+    console.error('[config] 迁移结果写盘失败（本次内存中仍生效）:', e.message);
+  }
+  return schema.decodeV2(migrated.config).config;
+}
+
+/** 迁移前的强制备份（只写一次，绝不覆盖已有备份） */
+function backupOnce(rawDoc) {
+  try {
+    if (fs.existsSync(configBackupPath)) return;
+    fs.writeFileSync(configBackupPath, JSON.stringify(rawDoc, null, 2));
+  } catch (e) {
+    console.error('[config] 备份失败:', e.message);
+  }
+}
 
 function loadConfig() {
   try {
     if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const config = readFlatConfig();
       migrateConfig(config);
       return config;
     }
@@ -136,8 +180,10 @@ function migrateConfig(config) {
 }
 
 function saveConfig(config) {
+  // 磁盘上始终写 v2 文档；内存里的调用方仍然传/收扁平对象，
+  // 两个视图由 config-schema 负责转换，因此调用点无需感知结构变化。
+  const data = JSON.stringify(schema.encodeForDisk(config), null, 2);
   // 重试机制：频繁写入可能因文件被占用而 EPERM
-  const data = JSON.stringify(config, null, 2);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       fs.writeFileSync(configPath, data);
@@ -163,4 +209,12 @@ function saveConfig(config) {
   }
 }
 
-module.exports = { loadConfig, saveConfig, isDev, rootDir, configPath, userDataDir };
+module.exports = {
+  loadConfig,
+  saveConfig,
+  isDev,
+  rootDir,
+  configPath,
+  configBackupPath,
+  userDataDir
+};

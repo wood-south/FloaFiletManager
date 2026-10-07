@@ -447,13 +447,75 @@ src/main/capabilities/index.js
 
 ### 阶段 6：配置 v1 → v2 迁移
 
-| 项 | 内容 |
-| --- | --- |
-| 6.1 | `config.json` 命名空间化：`{ version: 2, core: {...}, capabilities: {...} }` |
-| 6.2 | 迁移前**先备份** `config.json.bak`（当前只有 EPERM 兜底，无备份） |
-| 6.3 | 保留一个版本的旧字段读取兼容层，避免一次性改爆所有调用点 |
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 6.1 | `config.json` 命名空间化：`{ version:2, core:{...}, capabilities:{...}, legacy:{...} }` | ✅ `src/main/config-schema.js` |
+| 6.2 | 迁移前**先备份** `config.json.bak`（只写一次，绝不覆盖已有备份） | ✅ |
+| 6.3 | 保留旧字段读取兼容层，避免一次性改爆所有调用点 | ✅ |
 
-**检测**：用现有 `config.json` 实测迁移（v1 全字段保留、无丢失）；破坏性用例——配置文件损坏/半截时能安全回退到默认值。
+**v2 结构**
+
+```jsonc
+{
+  "version": 2,
+  "core":       { savePath, floatPosition, snapEdges, dockVisible, floatAlwaysOnTop,
+                  dockAlwaysOnTop, dockX, dockBottom, hideSystemTaskbar,
+                  capabilities: { <主进程能力开关>: true|false } },
+  "capabilities": {
+    "file-manager": { partitions, preferredPath, navItems },
+    "dock":         { dockSettings },
+    "<渲染侧能力id>": { ... }
+  },
+  "legacy":     { 已废弃但**不删除**的字段 }
+}
+```
+
+**三条硬约束**
+
+1. **绝不丢字段**：迁移是字段搬家而非清理。未识别字段进 `legacy` 保留 ——
+   连 `snapEdge` / `desktopIconsHidden` 这类当前无人读取的废弃键也一并留着。
+   测试用**真实的 `.userdata/config.json`**（15 个顶层字段、2 个分区、
+   12 个导航项）断言逐字段值相等，一个不丢。
+2. **内部视图保持 v1 形状**：`decodeV2()` 把 v2 摊平回扁平对象，
+   因此 `loadConfig()` 的约 20 个调用点**一行都不用改**；
+   `saveConfig()` 始终写 v2 文档（内存扁平 / 磁盘 v2 两个视图）。
+3. **纯函数 + 不抛错**：编解码不碰文件系统，对 null/数组/字符串/自引用
+   等畸形输入返回空值或警告而不抛异常（配置损坏时应用必须能起来）。
+   写盘失败也不影响本次运行（内存中数据正确，下次启动重试）。
+
+**过程中被测试抓出的两个真实缺陷（都在本阶段新增的 schema 里）**
+
+1. **分组名泄漏进能力命名空间**：`decodeV2` 把 `file-manager`/`dock` 等分组
+   写回了 `flat.capabilities`，导致「读盘→写盘」每次都会再嵌一层、配置持续膨胀。
+   已把分组名设为结构保留字，并补了**幂等性断言**（连续 5 次编解码结果不变）。
+   这是最危险的一类回归 —— 单次运行看不出来，配置会悄悄变大。
+2. **`decodeV2` 覆盖主进程能力开关**：它用 `flat.capabilities` 直接赋值，
+   把先前从 `core.capabilities` 读入的开关整体覆盖掉了。已改为合并。
+
+**一个真实存在的命名冲突（已解决并固定）**：主进程能力层（阶段 5）有一个能力
+id 就叫 `dock`，而 v2 又用 `dock` 作为 `dockSettings` 的分组名。两者同名会让
+`capabilities.dock` 既像分组又像能力配置。处理：撞名的能力配置存到保留键
+`_caps` 下（按 id 再分一层），绝不与分组混淆。
+
+**已知的有损点（显式固定，不当回归）**：v1 把「能力开关 `enabled`」与「能力配置」
+压进同一个键，扁平视图无法同时表示两者。因此撞名 id 摊平后只保留配置对象、
+不含 `enabled`；实际生效值由「无 `enabled` → 用 defaultEnabled」决定，
+与迁移前等效。已在测试中显式断言这一行为。
+
+**检测**：
+- 新增 `test/config-migration.test.js` **44 项断言**：真实 config.json 零丢失、
+  往返一致、畸形输入不抛错（含自引用）、未识别字段进 legacy、能力开关与能力配置
+  分家、`isV2` 判定、`encodeForDisk` 幂等
+- 自检脚本 13 → **14 个**，断言 340 → **379 项**
+- `npm test` 14 个脚本全绿；`npm run lint` 全绿；`node --check` 49 个文件通过
+
+**未完成 / 注意**
+
+- 真实 `.userdata/config.json` 在本次会话中**未被改写**（迁移只在应用启动时发生）。
+  实际迁移效果需 `npm start` 触发，届时会生成 `config.json.bak`。
+- 兼容层（可读 v1）计划保留一个版本；一个版本之后可移除 v1 读取分支。
+
+**提交**：`refactor: 阶段6 配置结构 v1→v2 命名空间化（含强制备份与兼容层）`
 
 ---
 
@@ -516,7 +578,7 @@ src/main/capabilities/index.js
 ✅ 阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁                               [733b907] [737c987]
 ✅ 阶段  3:  feat: 桌宠动画状态机与皮肤包格式                                   [5db2e0a]
    阶段  4:  fix: 重构吸附几何计算与锚点上报
-   阶段  5:  refactor: 主进程按能力分家
+✅ 阶段  5:  refactor: 主进程按能力分家                                         [887aa1e]
    阶段  6:  refactor: 配置命名空间化 v1→v2 迁移
    阶段  7:  feat: Dock 变量化、磁贴放大与多屏支持
    阶段  8:  feat: 本地皮肤包导入导出与商城页
