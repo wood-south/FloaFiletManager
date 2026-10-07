@@ -6,6 +6,7 @@ module.exports = [
   { name: '能力层契约 capabilities.js + quick-upload', file: 'capabilities.test.js' },
   { name: '点击穿透仲裁 penetration.js', file: 'penetration.test.js' },
   { name: '桌宠交互手势 interaction.js', file: 'interaction.test.js' },
+  { name: '宠物视觉框测量与上报 anchor.js', file: 'anchor.test.js' },
   { name: '浮窗吸附几何 snap.js', file: 'snap.test.js' },
   { name: '吸附与 Dock 移动契约 window.js', file: 'snap-contract.test.js' },
   { name: 'Dock 菜单扩展几何契约 dock.js', file: 'dock-geometry.test.js' },

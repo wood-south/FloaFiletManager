@@ -389,114 +389,13 @@ window.electronAPI.onDockSnapChanged((side) => {
 });
 
 /* ========== 宠物真实视觉框上报 ==========
-   吸附位置不能再依赖手调的像素补偿常数：宠物在 100×100 viewBox 中实际约占 90×80，
-   贴边旋转 90° 后视觉宽变成 80，hover 时还有 1.05 倍缩放 —— 任何固定值都只在单一
-   姿态下正确。这里持续上报真实视觉框（含 transform），主进程据此推导吸附位置。
+   实现见 renderer/pet/anchor.js（测量原理与「为什么不能量窗口/容器/整体包围盒」
+   都在该文件头部说明）。壳层只负责：注入 DOM、判定是否开启调试框、接上上报通道。
 
-   为避免过渡动画期间频繁触发重算，采用「变化后连续稳定 N 帧才上报」的策略。 */
-const visualBox = document.querySelector('.pet-avatar');
-const petSvg = document.querySelector('.pet-svg');
-let anchorReportTimer = null;
-let anchorStableFrames = 0;
-let anchorLastReport = null;
-
-/**
- * 读取宠物的**真实视觉框**（相对窗口左上角）。
- *
- * 反复试错后的结论：不要用「整体包围盒 + 阴影补偿」的思路。
- * 地面阴影 `<ellipse class="pet-shadow">` 是个外切椭圆，它在四条边都超出猫本体，
- * 但超出量各不相同（下约 5、左右各约 5、上 0），任何"统一内缩/逐边扣除"的近似
- * 都会在某个方向偏掉 —— 表现为「上/左/右覆盖边框、下方又太远」。
- *
- * 现在改为**直接量猫自己的图形**：遍历 SVG 可见子元素，
- * 跳过 .pet-shadow，把其余元素（头、耳、眼、爪、胡须…）的包围盒取并集。
- * 这样锚点边界就是用户真正看到的轮廓，新增部件也会自动纳入。
- */
-const SHADOW_SELECTOR = '.pet-shadow';
-
-function readPetAnchor() {
-  if (petSvg && typeof petSvg.getBBox === 'function' && typeof petSvg.getScreenCTM === 'function') {
-    try {
-      const ctm = petSvg.getScreenCTM();
-      const union = readVisibleUnion(ctm);
-      if (union) {
-        const width = union.right - union.left;
-        const height = union.bottom - union.top;
-        if (width >= 1 && height >= 1) {
-          return {
-            left: Math.round(union.left),
-            top: Math.round(union.top),
-            width: Math.round(width),
-            height: Math.round(height)
-          };
-        }
-      }
-    } catch (_) {
-      // getBBox 在元素不可见时可能抛错，回退到容器矩形
-    }
-  }
-  const rect = visualBox ? visualBox.getBoundingClientRect() : null;
-  if (!rect || !rect.width || !rect.height) return null;
-  return {
-    left: Math.round(rect.left),
-    top: Math.round(rect.top),
-    width: Math.round(rect.width),
-    height: Math.round(rect.height)
-  };
-}
-
-/**
- * 猫本体（排除地面阴影）在客户端坐标下的并集边界。
- * @returns {{left:number,top:number,right:number,bottom:number}|null}
- */
-function readVisibleUnion(ctm) {
-  const children = petSvg.children ? Array.from(petSvg.children) : [];
-  let left = Infinity;
-  let top = Infinity;
-  let right = -Infinity;
-  let bottom = -Infinity;
-
-  for (const el of children) {
-    if (el.classList && el.classList.contains(SHADOW_SELECTOR.slice(1))) continue;
-    if (typeof el.getBBox !== 'function') continue;
-    let b;
-    try {
-      b = el.getBBox();
-    } catch (_) {
-      continue;
-    }
-    if (!b || !b.width || !b.height) continue;
-    [[b.x, b.y], [b.x + b.width, b.y],
-      [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]
-    ].forEach(([ux, uy]) => {
-      const x = ctm.a * ux + ctm.c * uy + ctm.e;
-      const y = ctm.b * ux + ctm.d * uy + ctm.f;
-      if (x < left) left = x;
-      if (x > right) right = x;
-      if (y < top) top = y;
-      if (y > bottom) bottom = y;
-    });
-  }
-
-  if (!Number.isFinite(left) || !Number.isFinite(top) ||
-      !Number.isFinite(right) || !Number.isFinite(bottom)) {
-    return null;
-  }
-  return { left, top, right, bottom };
-}
-
-function isSameAnchor(a, b) {
-  if (!a || !b) return false;
-  return a.left === b.left && a.top === b.top &&
-    a.width === b.width && a.height === b.height;
-}
-
-/**
- * 调试可视化：把「吸附所用的锚点框」画出来（宠物画面内的红色矩形）。
- * 用途：吸附贴合出现肉眼可见的偏差时，难以判断是"度量错误"还是"视觉模型错误"。
- * 打开后截图即可确认锚点框是否正好包住猫本体，从而定位问题。
- * 开启方式：HTML 根元素加 `debug-anchor` 类，或 localStorage 置 dsh_debug_anchor=1。
- */
+   调试可视化：把「吸附所用的锚点框」画出来（宠物画面内的红色矩形）。
+   用途：吸附贴合出现肉眼可见的偏差时，难以判断是"度量错误"还是"视觉模型错误"。
+   打开后截图即可确认锚点框是否正好包住猫本体。
+   开启方式：HTML 根元素加 `debug-anchor` 类，或 localStorage 置 dsh_debug_anchor=1。 */
 const debugAnchorEnabled = (() => {
   try {
     if (document.documentElement.classList.contains('debug-anchor')) return true;
@@ -506,63 +405,21 @@ const debugAnchorEnabled = (() => {
   }
 })();
 
-let debugAnchorBox = null;
-
-function renderDebugAnchor(anchor) {
-  if (!debugAnchorEnabled) return;
-  if (!debugAnchorBox) {
-    debugAnchorBox = document.createElement('div');
-    debugAnchorBox.style.cssText = [
-      'position:absolute',
-      'border:1px solid rgba(255,0,0,0.9)',
-      'background:rgba(255,0,0,0.08)',
-      'pointer-events:none',
-      'z-index:9999'
-    ].join(';');
-    document.body.appendChild(debugAnchorBox);
-  }
-  if (!anchor) {
-    debugAnchorBox.style.display = 'none';
-    return;
-  }
-  debugAnchorBox.style.display = 'block';
-  debugAnchorBox.style.left = anchor.left + 'px';
-  debugAnchorBox.style.top = anchor.top + 'px';
-  debugAnchorBox.style.width = anchor.width + 'px';
-  debugAnchorBox.style.height = anchor.height + 'px';
-}
+const anchorWatcher = window.createAnchorWatcher({
+  svg: document.querySelector('.pet-svg'),
+  container: document.querySelector('.pet-avatar'),
+  report: (anchor) => {
+    if (window.electronAPI?.reportPetAnchor) window.electronAPI.reportPetAnchor(anchor);
+  },
+  debug: debugAnchorEnabled
+});
 
 function startAnchorWatch() {
-  let last = readPetAnchor();
-  anchorStableFrames = 0;
-  const tick = () => {
-    const cur = readPetAnchor();
-    renderDebugAnchor(cur);
-    if (cur) {
-      if (isSameAnchor(cur, last)) {
-        anchorStableFrames++;
-        // 连续 3 帧无变化视为过渡结束，此时才上报（避免中途触发吸附重算）
-        if (anchorStableFrames === 3 && !isSameAnchor(cur, anchorLastReport)) {
-          anchorLastReport = cur;
-          if (window.electronAPI?.reportPetAnchor) {
-            window.electronAPI.reportPetAnchor(cur);
-          }
-        }
-      } else {
-        anchorStableFrames = 0;
-        last = cur;
-      }
-    }
-    anchorReportTimer = requestAnimationFrame(tick);
-  };
-  anchorReportTimer = requestAnimationFrame(tick);
+  anchorWatcher.start();
 }
 
 function stopAnchorWatch() {
-  if (anchorReportTimer) {
-    cancelAnimationFrame(anchorReportTimer);
-    anchorReportTimer = null;
-  }
+  anchorWatcher.stop();
 }
 
 // 窗口隐藏时无需上报（轮询本身开销很低，但没必要空转）
@@ -589,7 +446,8 @@ function setPetCursor(cursor) {
 document.addEventListener('mousemove', (e) => {
   const target = e.target;
   const onButton = !!(target && target.closest && target.closest('.menu-btn, .quit-btn'));
-  const rect = visualBox ? visualBox.getBoundingClientRect() : null;
+  // 复用锚点测量（量的是猫本体而非窗口/容器），保证光标命中区与吸附用的视觉框一致
+  const rect = anchorWatcher.read();
   const insideContainer = !!petBody && e.clientX >= 0 && e.clientY >= 0 &&
     e.clientX <= window.innerWidth && e.clientY <= window.innerHeight;
   interaction.updateCursor(

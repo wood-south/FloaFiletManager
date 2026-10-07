@@ -268,9 +268,26 @@ if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 - `npm test` 9 个脚本全绿；`npm run lint` 全绿
 
 **尚未完成（原计划里的 2.1 后半）**：`renderer/pet/{shell,behavior}.js` 未拆 ——
-`float.js` 目前仍有约 150 行「宠物视觉框测量与上报」（`readPetAnchor` /
-`readVisibleUnion` / `startAnchorWatch` / 调试框）。这部分与吸附几何强耦合、
-且已有 `snap.test.js` + `snap-flow.test.js` 覆盖，为控制单阶段风险留到后续处理。
+`float.js` 仍保留菜单/退出/贴边的一小组状态（`menuOpen` / `quitOpen` / `wasSnapped` /
+`snapLock`）。它们与 DOM 事件与穿透仲裁调用点交织，且各自都有测试覆盖，
+为控制单阶段风险暂不强行拆分；`behavior.js` 则留给阶段 3 的动画状态机。
+
+**阶段 2 补完（视觉框测量抽离）**
+
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 2.4 | 抽出 `renderer/pet/anchor.js`：宠物真实视觉框的测量、稳定帧节流与上报 | ✅ |
+
+把约 150 行「视觉框测量 + 稳定帧节流 + 调试框」从 `float.js` 抽成可注入 DOM 的模块。
+这是吸附是否准确的根基，但此前完全没有测试覆盖（只有源码级正则断言）。
+
+- `float.js` 551 → 414 行（相对阶段 2 起点 595 共 −181 行）
+- 新增 `test/anchor.test.js` **35 项断言**：取并集排除阴影、CTM 坐标变换（含旋转矩阵）、
+  异常与空值、容器回退、稳定帧节流、start/stop/reset 生命周期、调试框默认关闭
+- 稳定语义刻意与原实现保持一致（连续 3 次「与上帧相同」才上报，即第 4 帧；
+  第 1 帧只建立基准）—— 测试初稿按「第 3 帧」写，被实测纠正
+
+**检测（补完后）**：自检脚本 9 → **10 个**，断言 210 → **245 项**；`npm test` 全绿、`npm run lint` 全绿。
 
 **提交**：`refactor: 阶段2 抽离穿透仲裁与交互手势（穿透改原因集合）`
 

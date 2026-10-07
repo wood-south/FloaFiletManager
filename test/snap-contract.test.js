@@ -119,31 +119,28 @@ ok('提供 DSH_DEBUG_SNAP 调试日志开关', () => {
   assert.ok(/DSH_DEBUG_SNAP/.test(windowSrc), '缺少吸附调试日志开关');
   assert.ok(/function debugSnap\(/.test(windowSrc), '缺少 debugSnap');
 });
+// 阶段 2 补完：视觉框测量从 float.js 抽到 renderer/pet/anchor.js，
+// 断言随之指向新位置（float.js 只保留 DOM 注入与调试开关判定）。
+const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+const anchorSrc = fs.readFileSync(path.join(root, 'renderer', 'pet', 'anchor.js'), 'utf8');
 ok('视觉框用 SVG getBBox + getScreenCTM 测量真实画面（而非容器 90×90）', () => {
-  const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
-  const start = floatSrc.indexOf('function readPetAnchor(');
-  const unionStart = floatSrc.indexOf('function readVisibleUnion(');
-  const unionEnd = floatSrc.indexOf('\n}\n', unionStart);
-  const body = floatSrc.slice(start, unionEnd);
-  assert.ok(/getBBox\(\)/.test(body), '未使用 getBBox 测量真实绘制内容');
-  assert.ok(/getScreenCTM\(\)/.test(body), '未做用户单位 → 客户端坐标转换');
+  assert.ok(/getBBox\(\)/.test(anchorSrc), '未使用 getBBox 测量真实绘制内容');
+  assert.ok(/getScreenCTM\(\)/.test(anchorSrc), '未做用户单位 → 客户端坐标转换');
   assert.ok(/\.pet-svg/.test(floatSrc), '未定位到 .pet-svg');
   // 必须仍保留回退，避免 getBBox 抛错时完全没有锚点
-  assert.ok(/getBoundingClientRect\(\)/.test(floatSrc), '缺少回退路径');
+  assert.ok(/getBoundingClientRect\(\)/.test(anchorSrc), '缺少回退路径');
 });
 ok('锚点直接量猫本体：遍历可见子元素取并集并跳过阴影', () => {
-  const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
-  const start = floatSrc.indexOf('function readVisibleUnion(');
-  const end = floatSrc.indexOf('\n}\n', start);
-  const body = floatSrc.slice(start, end);
-  assert.ok(/petSvg\.children/.test(body), '未遍历 SVG 可见子元素');
-  assert.ok(/pet-shadow/.test(floatSrc), '未定义阴影选择器');
-  assert.ok(/SHADOW_SELECTOR/.test(body), '遍历时未跳过地面阴影元素');
+  const start = anchorSrc.indexOf('function readVisibleUnion(');
+  const end = anchorSrc.indexOf('\n  }\n', start);
+  const body = anchorSrc.slice(start, end);
+  assert.ok(/svg\.children/.test(body), '未遍历 SVG 可见子元素');
+  assert.ok(/pet-shadow/.test(anchorSrc), '未定义阴影选择器');
+  assert.ok(/SHADOW_CLASS/.test(body), '遍历时未跳过地面阴影元素');
   assert.ok(/left/.test(body) && /right/.test(body) && /top/.test(body) && /bottom/.test(body),
     '并集未覆盖四条边');
   // 不应再依赖「整体包围盒 + 阴影补偿」的近似
-  const anchor = floatSrc.slice(floatSrc.indexOf('function readPetAnchor('), start);
-  assert.ok(!/readShadowClientBox|sideSlack/.test(anchor),
+  assert.ok(!/readShadowClientBox|sideSlack/.test(anchorSrc),
     '仍在使用整体包围盒 + 阴影扣除的近似（会导致四边偏差不一致）');
 });
 
