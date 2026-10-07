@@ -514,18 +514,25 @@ skinRenderer = window.PET_SKIN_RENDER
 
 /** 按渲染器当前模式统一决定「画布 / 内置 SVG / 皮肤 SVG」谁显示。
  *
- *  为什么要有一个统一入口：显示切换原先散落在 onReady / onFallback /
- *  applySkinToShell 三处，任何一条路径漏写就会**两只猫叠加**（用户实测就是这个现象）。
- *  现在只有一个函数能改可见性，且每帧都会调用一次兜底。 */
+ *  实现方式：在 petBody 上写一个**显式模式属性**，显示规则全部交给
+ *  float.css 里的 `[data-pet-visual=...]` 选择器。
+ *
+ *  为什么不用 hidden 属性：hidden 只提供一条 UA 的 `display:none`，
+ *  任何带 display 的规则都能压过它；一旦某处给 .pet-svg 写了 display，
+ *  就会出现「内置 SVG 与画布同时显示」的叠加（用户实测过两次）。
+ *  属性选择器是一条唯一且带优先级的规则，且 js 里只有这一个写入点。 */
 function syncPetVisuals() {
-  if (!skinRenderer) return;
-  const frameMode = skinRenderer.isFrameMode();
-  const skinImg = petSvg?.parentElement?.querySelector('.pet-skin-img') || null;
-  const usingSkinSvg = !!(skinImg && !skinImg.hidden);
-
-  if (petCanvas) petCanvas.hidden = !frameMode;
-  // 帧模式或皮肤 SVG 生效时，内置 SVG 必须让位
-  if (petSvg) petSvg.hidden = frameMode || usingSkinSvg;
+  if (!petBody) return;
+  let mode = 'builtin';
+  if (skinRenderer && skinRenderer.isFrameMode()) {
+    mode = 'sprite';
+  } else if (petSvg) {
+    const img = petSvg.parentElement?.querySelector('.pet-skin-img');
+    if (img && !img.hidden) mode = 'skin';
+  }
+  if (petBody.dataset.petVisual !== mode) {
+    petBody.dataset.petVisual = mode;
+  }
 }
 
 /** 把皮肤自带的 SVG 装进画面（用 data: URL，受 CSP 限制不能直读本地文件） */

@@ -729,23 +729,97 @@ function renderCurrentSkin() {
     `<span class="skin-current-badge">${window.SETTINGS_UI.escapeHtml(window.SETTINGS_UI.sourceLabel(skin && skin.source))}</span>`;
 }
 
-/** 试穿预览：把皮肤图片显示在预览区（不写入配置） */
+/** 试穿预览：把皮肤画成**动画**（而不是显示整张图集）
+ *
+ *  之前这里直接 <img src=皮肤图集>，用户看到的是一堆帧拼在一起的网格图，
+ *  完全看不出动画长什么样。现在按 clips 逐动作逐帧裁切播放。
+ *  只读，不写配置。 */
+let previewAnim = null;   // { raf, plan, img, canvas, startedAt, loop }
+
+function stopPreviewAnim() {
+  if (previewAnim && previewAnim.raf) {
+    cancelAnimationFrame(previewAnim.raf);
+  }
+  previewAnim = null;
+}
+
 function renderPreview(skin) {
   if (!skinPreviewStage) return;
+  stopPreviewAnim();
+
   if (!skin) {
     skinPreviewStage.innerHTML = '<div class="empty-tip">点击下方皮肤卡片试穿</div>';
     if (btnApplySkin) btnApplySkin.disabled = true;
     return;
   }
-  const media = window.SETTINGS_UI.previewMedia(skin);
-  if (media.kind !== 'img') {
+
+  const plan = window.SETTINGS_UI.buildPreviewPlan(
+    skin, window.PET_BEHAVIOR ? window.PET_BEHAVIOR.STATES : null, 1400);
+
+  if (plan.kind === 'none') {
     skinPreviewStage.innerHTML =
-      `<div class="empty-tip">无法预览：${window.SETTINGS_UI.escapeHtml(media.reason)}</div>`;
+      `<div class="empty-tip">无法预览：${window.SETTINGS_UI.escapeHtml(plan.reason)}</div>`;
     if (btnApplySkin) btnApplySkin.disabled = false;
     return;
   }
-  skinPreviewStage.innerHTML = `<img src="${window.SETTINGS_UI.escapeHtml(media.url)}" alt="皮肤预览" />`;
+
+  if (plan.kind === 'img') {
+    // SVG 皮肤：静态图即可（本来就没有帧）
+    skinPreviewStage.innerHTML =
+      `<img src="${window.SETTINGS_UI.escapeHtml(plan.url)}" alt="皮肤预览" />`;
+    if (btnApplySkin) btnApplySkin.disabled = false;
+    return;
+  }
+
+  /* sprite：建画布逐帧播放 */
+  const canvas = document.createElement('canvas');
+  canvas.width = plan.frameWidth;
+  canvas.height = plan.frameHeight;
+  canvas.className = 'skin-preview-canvas';
+  const label = document.createElement('div');
+  label.className = 'skin-preview-label';
+  label.textContent = '播放中…';
+
+  skinPreviewStage.innerHTML = '';
+  skinPreviewStage.appendChild(canvas);
+  skinPreviewStage.appendChild(label);
   if (btnApplySkin) btnApplySkin.disabled = false;
+
+  const img = new Image();
+  const state = { plan, img, canvas, raf: null, startedAt: null };
+  previewAnim = state;
+
+  img.onload = () => {
+    if (previewAnim !== state) return; // 已被新的预览取代
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const cols = Math.max(1, Math.floor(img.width / plan.frameWidth));
+
+    const draw = (now) => {
+      if (previewAnim !== state) return;
+      if (state.startedAt === null) state.startedAt = now;
+      const item = window.SETTINGS_UI.frameAtTime(plan, now - state.startedAt);
+      if (item) {
+        const cols2 = cols;
+        const sx = (item.frame % cols2) * plan.frameWidth;
+        const sy = Math.floor(item.frame / cols2) * plan.frameHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        try {
+          ctx.drawImage(img, sx, sy, plan.frameWidth, plan.frameHeight,
+            0, 0, plan.frameWidth, plan.frameHeight);
+        } catch (_) { /* 越界帧跳过，下一帧继续 */ }
+        // 显示当前正在播哪个动作，便于对照
+        label.textContent = item.state + ' · 第 ' + item.frame + ' 帧';
+      }
+      state.raf = requestAnimationFrame(draw);
+    };
+    state.raf = requestAnimationFrame(draw);
+  };
+  img.onerror = () => {
+    if (previewAnim !== state) return;
+    skinPreviewStage.innerHTML = '<div class="empty-tip">图集图片加载失败</div>';
+  };
+  img.src = plan.url;
 }
 
 /**

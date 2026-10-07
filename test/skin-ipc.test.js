@@ -393,31 +393,45 @@ console.log('\n[8] 自主行为接线（阶段 3 收尾：sleep/walk/celebrate �
 console.log('\n[9] 显隐切换只有一个入口（防「两只猫叠加」）');
 {
   const floatJs2 = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  const floatCss = fs.readFileSync(path.join(root, 'renderer', 'styles', 'float.css'), 'utf8');
+  const floatHtml = fs.readFileSync(path.join(root, 'renderer', 'float.html'), 'utf8');
 
   ok('存在统一的 syncPetVisuals 函数', () => {
     assert.ok(/function syncPetVisuals\(/.test(floatJs2), '缺少 syncPetVisuals');
   });
-  ok('画布/内置SVG 的 hidden 只在 syncPetVisuals 里被写', () => {
-    // 抽出 syncPetVisuals 函数体，其余位置不应再直接写 petCanvas.hidden / petSvg.hidden
-    const start = floatJs2.indexOf('function syncPetVisuals(');
-    const end = floatJs2.indexOf('\n}', start);
-    const body = floatJs2.slice(start, end);
-    const outside = floatJs2.slice(0, start) + floatJs2.slice(end);
-    assert.ok(/petCanvas\.hidden\s*=/.test(body), 'syncPetVisuals 内应设置画布显隐');
-    assert.ok(/petSvg\.hidden\s*=/.test(body), 'syncPetVisuals 内应设置 SVG 显隐');
-
-    const strayCanvas = (outside.match(/petCanvas\.hidden\s*=/g) || []).length;
-    const straySvg = (outside.match(/petSvg\.hidden\s*=/g) || []).length;
-    assert.strictEqual(strayCanvas, 0,
-      'syncPetVisuals 之外还有 ' + strayCanvas + ' 处直接写 petCanvas.hidden，容易漏改导致叠加');
-    assert.strictEqual(straySvg, 0,
-      'syncPetVisuals 之外还有 ' + straySvg + ' 处直接写 petSvg.hidden，容易漏改导致叠加');
-  });
-  ok('帧模式下内置 SVG 一定让位（frameMode 或皮肤SVG 都隐藏它）', () => {
+  ok('用显式模式属性切换，而不是 hidden 属性', () => {
+    // hidden 只提供一条 UA 样式，任何带 display 的规则都能压过它 ——
+    // 那正是「内置 SVG 与画布同时显示」的成因，因此改为属性选择器。
     const start = floatJs2.indexOf('function syncPetVisuals(');
     const body = floatJs2.slice(start, floatJs2.indexOf('\n}', start));
-    assert.ok(/frameMode\s*\|\|\s*usingSkinSvg/.test(body),
-      'syncPetVisuals 未把 frameMode 纳入隐藏条件');
+    assert.ok(/petBody\.dataset\.petVisual\s*=/.test(body),
+      'syncPetVisuals 未设置 data-pet-visual');
+    assert.ok(!/\.hidden\s*=/.test(body),
+      'syncPetVisuals 里不应再用 hidden（容易被 CSS display 压过）');
+  });
+  ok('float.html 的 pet-body 带默认模式 builtin', () => {
+    assert.ok(/id="petBody"[^>]*data-pet-visual="builtin"/.test(floatHtml),
+      'petBody 缺少默认 data-pet-visual="builtin"');
+  });
+  ok('CSS 为三种模式各写了互斥的显示规则', () => {
+    ['builtin', 'sprite', 'skin'].forEach((m) => {
+      assert.ok(floatCss.includes("[data-pet-visual='" + m + "']"),
+        '缺少 ' + m + ' 模式的显示规则');
+    });
+    // sprite 模式必须隐藏内置 SVG —— 这是"旧图不去掉"的直接防线
+    const spriteBlock = floatCss.slice(floatCss.indexOf("[data-pet-visual='sprite']"));
+    const block = spriteBlock.slice(0, spriteBlock.indexOf('}'));
+    assert.ok(/\.pet-svg/.test(block), 'sprite 模式未隐藏 .pet-svg');
+  });
+  ok('画布/内置SVG 不再有散落的 hidden 写入点', () => {
+    const strayCanvas = (floatJs2.match(/petCanvas\.hidden\s*=/g) || []).length;
+    const straySvg = (floatJs2.match(/petSvg\.hidden\s*=/g) || []).length;
+    assert.strictEqual(strayCanvas, 0, '仍有 ' + strayCanvas + ' 处直接写 petCanvas.hidden');
+    assert.strictEqual(straySvg, 0, '仍有 ' + straySvg + ' 处直接写 petSvg.hidden');
+  });
+  ok('CSS 里画布与内置 SVG 都有明确的 display（不依赖 UA 默认）', () => {
+    assert.ok(/\.pet-canvas\s*\{[^}]*display:\s*block/.test(floatCss), '.pet-canvas 缺 display');
+    assert.ok(/\.pet-svg\s*\{[^}]*display:\s*block/.test(floatCss), '.pet-svg 缺 display');
   });
   ok('每帧都会同步一次显隐（startLoop 传了 onTick）', () => {
     assert.ok(/onTick:\s*\(\)\s*=>\s*syncPetVisuals\(\)/.test(floatJs2),
@@ -463,7 +477,6 @@ console.log('\n[9] 显隐切换只有一个入口（防「两只猫叠加」）'
   ok('提供 petDebug / petTest 诊断入口', () => {
     assert.ok(/window\.petDebug\s*=/.test(floatJs2), '缺少 petDebug');
     assert.ok(/window\.petTest\s*=/.test(floatJs2), '缺少 petTest');
-    assert.ok(/petDebug\(\)/.test(floatJs2) || /petDebug/.test(floatJs2));
   });
 }
 

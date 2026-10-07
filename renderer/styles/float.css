@@ -115,24 +115,50 @@ body {
   animation: pet-breathe 3s ease-in-out infinite;
 }
 
-/* 动画帧画布（阶段 8.6）
-   仅在 sprite 皮肤成功加载后才显示；默认为 [hidden] 且 SVG 在场，
-   因此不装皮肤时外观与接入前完全一致。
-   画布的像素尺寸由图集单帧尺寸决定（由渲染器写入 width/height），
-   CSS 负责把它缩放进 90×90 的视觉框。 */
+/* 桌宠画面模式（阶段 8.6）
+   ------------------------------------------------------------
+   用**显式模式属性**而不是 hidden 属性来切换三种画面。
+
+   为什么换掉 hidden：hidden 只提供一条 UA 样式（display:none），
+   任何带 display 的规则都能压过它；一旦哪天给 .pet-svg 写了 display，
+   就会变成"内置 SVG 和画布同时显示"的叠加。用属性选择器则是
+   一条**唯一且带优先级**的规则，谁显示由单一真相决定。
+
+   取值：
+     builtin —— 内置 SVG 猫（默认，外观与接入前一致）
+     sprite  —— 帧动画画布
+     skin    —— 皮肤自带的 SVG */
+.pet-body[data-pet-visual='builtin'] .pet-canvas,
+.pet-body[data-pet-visual='builtin'] .pet-skin-img {
+  display: none;
+}
+
+.pet-body[data-pet-visual='sprite'] .pet-svg,
+.pet-body[data-pet-visual='sprite'] .pet-skin-img {
+  display: none;
+}
+
+.pet-body[data-pet-visual='skin'] .pet-svg,
+.pet-body[data-pet-visual='skin'] .pet-canvas {
+  display: none;
+}
+
+/* 皮肤 SVG（<img> 承载，避免把外部标记注入 DOM）与画布同一视觉框 */
+.pet-skin-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+/* 帧画布的像素尺寸由图集单帧尺寸决定（由渲染器写入 width/height），
+   CSS 负责把它缩放进 90×90 的视觉框。
+   注意这里**不要**再用 [hidden] 控制显隐：显隐统一由 .pet-body
+   的 data-pet-visual 决定（见上方三条规则），避免两套机制打架。 */
 .pet-canvas {
   width: 100%;
   height: 100%;
   display: block;
-}
-
-.pet-canvas[hidden] {
-  display: none;
-}
-
-/* 换用皮肤自带的 SVG 时，隐藏内置 SVG（两者互斥显示） */
-.pet-svg[hidden] {
-  display: none;
 }
 
 .pet-body.snap-left .pet-avatar {
@@ -226,6 +252,10 @@ body {
 .pet-svg {
   width: 100%;
   height: 100%;
+  /* 显式声明 display：不依赖 UA 默认值。
+     三种画面（内置 SVG / 帧画布 / 皮肤 SVG）的显隐全部由
+     .pet-body[data-pet-visual] 决定，这里只保证它们是同一级别的块级元素。 */
+  display: block;
   pointer-events: none;
 }
 

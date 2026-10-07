@@ -147,6 +147,112 @@
   }
 
   /**
+   * 试穿预览的播放计划。
+   *
+   * 为什么需要它：图集是一整张网格图，直接 <img src=atlas.png> 显示的是
+   * **全部帧拼在一起**，用户根本看不出动画长什么样。要"显示动画"就必须
+   * 按 clips 逐个动作、逐帧裁切播放。
+   *
+   * @param {object} skin 带内联图片的皮肤描述
+   * @param {object} states 状态表（提供 loop 语义）
+   * @param {number} [perStateMs] 每个动作播放时长
+   * @returns {{kind:'sprite', url, frameWidth, frameHeight, timeline:Array, durationMs}
+   *          |{kind:'img', url}|{kind:'none', reason}}
+   */
+  function buildPreviewPlan(skin, states, perStateMs) {
+    if (!skin || !skin.render) return { kind: 'none', reason: '没有皮肤信息' };
+    const r = skin.render;
+
+    if (r.kind === 'svg') {
+      const url = r.svg && r.svg.dataUrl;
+      return url ? { kind: 'img', url } : { kind: 'none', reason: '缺少 SVG 图片' };
+    }
+
+    const a = r.atlas;
+    if (!a || !a.dataUrl) return { kind: 'none', reason: '缺少图集图片' };
+    if (!(a.frameWidth > 0) || !(a.frameHeight > 0)) {
+      return { kind: 'none', reason: '图集帧尺寸非法' };
+    }
+
+    const clips = (skin.clips && typeof skin.clips === 'object') ? skin.clips : {};
+    const table = states || {};
+    // 优先播放状态表里的顺序，只挑皮肤真正声明过的动作
+    const declared = Object.keys(table).filter((n) => clips[n] &&
+      Array.isArray(clips[n].frames) && clips[n].frames.length > 0);
+    // 皮肤若声明了状态表里没有的动作，也一并播（便于发现写错的状态名）
+    const extra = Object.keys(clips).filter((n) => !table[n] &&
+      Array.isArray(clips[n].frames) && clips[n].frames.length > 0);
+    const names = declared.concat(extra);
+
+    const span = perStateMs > 0 ? perStateMs : 1400;
+    const timeline = [];
+    /* 关键：时间轴必须是**全局单调**的。
+       早先每个动作都从 t=0 重新计时，结果整条时间轴里多个动作的 at 全是 0，
+       frameAtTime 顺次扫描时永远停在第一个动作上 —— 预览看起来只有 3 帧。
+       现在用一个累计偏移量把各动作首尾相接。 */
+    let offset = 0;
+    for (const name of names) {
+      const clip = clips[name];
+      const fps = (typeof clip.fps === 'number' && clip.fps > 0) ? clip.fps : 8;
+      const frameDur = 1000 / fps;
+      const frameCount = clip.frames.length;
+      // 循环动作至少播满 span；一次性动作按帧数播完即可（最多 span）
+      const loop = table[name] ? table[name].loop !== false : true;
+      const playMs = loop
+        ? Math.max(span, frameCount * frameDur)
+        : Math.min(span, frameCount * frameDur);
+
+      let t = 0;
+      let i = 0;
+      while (t < playMs) {
+        const idx = Math.min(i, frameCount - 1);
+        timeline.push({ at: t + offset, frame: clip.frames[idx], state: name });
+        t += frameDur;
+        i++;
+        if (i >= frameCount && !loop) break;
+        if (i > 200) break; // 防御：异常 fps 导致死循环
+      }
+      offset += playMs;
+    }
+
+    if (timeline.length === 0) {
+      // 没有可用 clips：退回单帧静态显示（至少让人看到第一帧）
+      return {
+        kind: 'sprite',
+        url: a.dataUrl,
+        frameWidth: a.frameWidth,
+        frameHeight: a.frameHeight,
+        timeline: [{ at: 0, frame: 0, state: 'idle' }],
+        durationMs: span,
+        staticOnly: true
+      };
+    }
+
+    return {
+      kind: 'sprite',
+      url: a.dataUrl,
+      frameWidth: a.frameWidth,
+      frameHeight: a.frameHeight,
+      timeline,
+      durationMs: offset,
+      states: names
+    };
+  }
+
+  /** 播放计划在某个时刻应显示的帧 */
+  function frameAtTime(plan, ms) {
+    if (!plan || plan.kind !== 'sprite' || !plan.timeline || plan.timeline.length === 0) return null;
+    const total = plan.durationMs || 1;
+    const t = ((ms % total) + total) % total;
+    let cur = plan.timeline[0];
+    for (const item of plan.timeline) {
+      if (item.at <= t) cur = item;
+      else break;
+    }
+    return cur;
+  }
+
+  /**
    * 生成一张皮肤卡片的 HTML。
    * @param {object} skin list-skins 返回的条目
    * @param {object} opts { activeId, canExport }
@@ -205,7 +311,9 @@
     escapeHtml,
     skinCardHtml,
     flattenSkins,
-    describeErrors
+    describeErrors,
+    buildPreviewPlan,
+    frameAtTime
   };
 
   global.SETTINGS_UI = API;

@@ -995,6 +995,27 @@ body {
   max-height: 160px;
 }
 
+/* 试穿预览：棋盘格舞台上居中播放动画帧（阶段 8.4 改进）
+   让画布保持像素清晰，并把它与「当前动作」标签叠起来 */
+.skin-preview-stage {
+  position: relative;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skin-preview-canvas {
+  /* 帧尺寸可能很小（如 64×64），放大到看得清 */
+  width: auto;
+  height: 132px;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+.skin-preview-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
 .skin-preview-actions {
   display: flex;
   gap: 8px;

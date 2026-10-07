@@ -19,6 +19,7 @@ module.exports = [
   { name: 'CAPABILITIES.md 与注册表一致', file: 'capabilities-doc.test.js' },
   { name: 'PET_ANIMATION_SPEC.md 与实现一致', file: 'pet-animation-doc.test.js' },
   { name: '内置示例皮肤 demo-cat', file: 'demo-skin.test.js' },
+  { name: '试穿预览播放计划', file: 'settings-preview.test.js' },
   { name: '共用 UI 原语 primitives.js', file: 'primitives.test.js' },
   { name: '能力层契约 capabilities.js + quick-upload', file: 'capabilities.test.js' },
   { name: '点击穿透仲裁 penetration.js', file: 'penetration.test.js' },
