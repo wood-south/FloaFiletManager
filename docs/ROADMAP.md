@@ -139,6 +139,32 @@ $env:DSH_DEBUG_SNAP=1; npx electron .
 
 **提交**：`fix: Dock 可拖到屏幕顶部，吸附不再有空隙且跟随移动`（`4ac9a0d`）
 
+### 阶段 4 再补充：吸附状态机化 + 全流程仿真（方法改进）
+
+连续两轮「凭猜测修吸附」效果不佳，改为**把吸附抽成可在 Node 完整模拟的状态机**，
+用仿真跑「拖动 → 吸附 → 移动 Dock」全过程。仿真一次定位到两个真实 bug：
+
+| 真实 bug | 影响 | 修复 |
+| --- | --- | --- |
+| `positionForSide` 只重算吸附轴，非吸附轴沿用当前坐标 | 贴在上/下方时 x 永远不动 → **Dock 横向移动后桌宠不跟随** | 传入 `relation`，非吸附轴按 `offsetX/offsetY` 跟随面板 |
+| `searchDockSnap` 先算位置再无条件 `setPosition` | 搜索失败时窗口已被改坏、跟随关系丢失 | 改为**先判定、后移动**：仅 `action === 'snap'` 才移动 |
+
+另外两处凭经验就能定位的问题：
+
+- **吸附差约 7px**：`readPetAnchor` 量的是 `.pet-avatar` 容器（90×90），而 SVG 内容在
+  viewBox 中只占 `x 15..85 / y 10..95`，真实画面约 63×76.5 → 改用 SVG `getBBox()` +
+  `getScreenCTM()` 测量真实绘制边界（保留容器矩形作回退）
+- **拖动闪动**：浮窗与 Dock 每次 `mousemove` 都移动一次窗口，一帧内可能多次
+  `setPosition` → 改为累积位移 + `requestAnimationFrame` 每帧提交一次，松手前 flush
+
+**结构整理**：`snap.js` 重构为状态机（`computeDockSnap` / `positionForSide` / `decide`），
+search 与 maintain 统一走 `decide()` 消除公式分叉。
+
+**检测**：`npm test` 6 个脚本全部通过；新增 `test/snap-flow.test.js`（17 项全流程仿真），
+`snap-contract.test.js` 扩至 15 项。
+
+**提交**：`fix: 吸附状态机化并修复跟随/间隙/拖动闪动（含全流程仿真）`（`906fcc8`）
+
 ---
 
 ### 阶段 1：抽出第一个能力 `quick-upload`（最小验证）
