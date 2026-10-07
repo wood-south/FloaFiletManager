@@ -14,6 +14,11 @@ let quitOpen = false;
 let wasSnapped = false;
 let snapLock = false;
 
+/* 皮肤帧渲染器（阶段 8.6）。**必须先声明**：applyBehaviorState 会在下面的
+   behavior 初始化时就被调用一次，而那时渲染器尚未创建 ——
+   若用 const 在后面声明，这里会因暂时性死区直接抛错。 */
+let skinRenderer = null;
+
 /* ========== 动画状态机（阶段 3 · A 层） ==========
    实现见 renderer/pet/behavior.js。壳层把「正在发生的事」翻译成状态，
    并把状态类贴到 petBody 上；CSS 按状态决定播哪个动画。
@@ -33,6 +38,8 @@ function applyBehaviorState(info) {
   if (appliedStateClass) petBody.classList.remove(appliedStateClass);
   petBody.classList.add(info.class);
   appliedStateClass = info.class;
+  // 皮肤帧渲染也要跟着状态走（无皮肤时是 no-op）
+  if (skinRenderer) skinRenderer.setState(info.state, performance.now());
 }
 
 // 初始化：显式贴上初始状态类（不能只等 onChange —— 初始状态没有「变化」事件）
@@ -270,6 +277,13 @@ menuRing.addEventListener('click', async (e) => {
       closeMenu();
       window.electronAPI.openThisComputer();
       break;
+    case 'settings':
+      // 打开设置窗口（与 Dock 右键的「打开设置」走同一通道）
+      closeMenu();
+      if (window.electronAPI?.openSettings) {
+        window.electronAPI.openSettings();
+      }
+      break;
     case 'pin':
       // 不关闭菜单，切换置顶状态
       const newState = await window.electronAPI.toggleAlwaysOnTop();
@@ -436,6 +450,85 @@ function syncSnapState() {
     petBody.classList.contains('dock-left') ||
     petBody.classList.contains('dock-right');
   behavior.set(snapped ? 'snap' : 'idle');
+}
+
+/* ========== 皮肤与动画帧渲染（阶段 8.6） ==========
+   皮肤由主进程管理（导入/校验/落盘），这里只负责把它画出来：
+   - kind=sprite：用 canvas 播 atlas 帧序列
+   - kind=svg   ：换成皮肤自带的 SVG
+   - 没装皮肤   ：保持内置 SVG 猫，外观与接入前完全一致
+
+   渲染器内部对「图片加载失败 / atlas 缺失 / frames.js 不存在」都做了回落，
+   因此这里不需要再判断 —— 只要看 isFrameMode() 决定 canvas 与 SVG 谁显示。 */
+const petCanvas = document.getElementById('petCanvas');
+const petSvg = document.querySelector('.pet-svg');
+
+// 注意：skinRenderer 已在文件顶部声明（let），这里只赋值 ——
+// applyBehaviorState 可能在更早的初始化中被调用
+skinRenderer = window.PET_SKIN_RENDER
+  ? window.PET_SKIN_RENDER.createSkinRenderer({
+    canvas: petCanvas,
+    // 加载失败/不可用时回调：确保内置 SVG 回到可见状态，绝不白屏
+    onFallback: () => {
+      if (petCanvas) petCanvas.hidden = true;
+      if (petSvg) petSvg.hidden = false;
+    },
+    onReady: () => {
+      if (petCanvas) petCanvas.hidden = false;
+      if (petSvg) petSvg.hidden = true;
+    }
+  })
+  : null;
+
+/** 把皮肤自带的 SVG 装进画面（用 data: URL，受 CSP 限制不能直读本地文件） */
+function applySvgSkin(skin) {
+  if (!petSvg || !skin || !skin.render || !skin.render.svg) return false;
+  const url = skin.render.svg.dataUrl;
+  if (!url) return false;
+  try {
+    // 用 <img> 承载皮肤 SVG：不把外部 SVG 标记注入 DOM，
+    // 避免皮肤携带的脚本/事件属性在页面上下文里执行
+    let img = petSvg.parentElement?.querySelector('.pet-skin-img');
+    if (!img) {
+      img = document.createElement('img');
+      img.className = 'pet-skin-img';
+      img.alt = skin.name || '皮肤';
+      petSvg.parentElement?.insertBefore(img, petSvg);
+    }
+    img.src = url;
+    img.hidden = false;
+    petSvg.hidden = true;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function applySkinToShell(skin) {
+  if (!skinRenderer) return;
+  // 先按 sprite 尝试；不成立时再考虑 svg；都没有则回到内置外观
+  const frameMode = skinRenderer.apply(skin);
+  if (frameMode) return;
+
+  const oldImg = petSvg?.parentElement?.querySelector('.pet-skin-img');
+  if (skin && skin.render && skin.render.kind === 'svg' && applySvgSkin(skin)) return;
+
+  if (oldImg) oldImg.remove();
+  if (petCanvas) petCanvas.hidden = true;
+  if (petSvg) petSvg.hidden = false;
+}
+
+if (skinRenderer && window.PET_SKIN_RENDER) {
+  window.PET_SKIN_RENDER
+    .loadActiveSkin({ api: window.electronAPI, renderer: { apply: applySkinToShell } })
+    .catch(() => { /* 皮肤加载失败不影响桌宠：内置外观继续用 */ });
+  // 播放循环：只在皮肤进入帧模式后才会真正绘制
+  window.PET_SKIN_RENDER.startLoop(skinRenderer);
+}
+
+/* 设置窗口换肤后通知浮窗（用户可能在设置里改了皮肤） */
+if (window.electronAPI?.onSkinChanged) {
+  window.electronAPI.onSkinChanged((skin) => applySkinToShell(skin || null));
 }
 
 /* ========== 宠物真实视觉框上报 ==========

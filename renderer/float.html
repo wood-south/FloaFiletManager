@@ -18,6 +18,7 @@
     <div class="pet-body" id="petBody">
       <div class="pet-avatar">
         <div class="pet-avatar-spin">
+          <canvas class="pet-canvas" id="petCanvas" width="90" height="90" hidden></canvas>
           <svg class="pet-svg" viewBox="0 0 100 100">
             <ellipse class="pet-shadow" cx="50" cy="90" rx="25" ry="5" fill="rgba(0,0,0,0.15)" />
             <g class="pet-head">
@@ -125,6 +126,14 @@
             ></path>
           </svg>
         </div>
+        <div class="menu-btn" data-action="settings" title="设置" id="settingsBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+            ></path>
+          </svg>
+        </div>
       </div>
 
       <div class="quit-ring" id="quitRing">
@@ -163,6 +172,8 @@
     <script src="pet/interaction.js"></script>
     <script src="pet/anchor.js"></script>
     <script src="pet/behavior.js"></script>
+    <script src="pet/frames.js"></script>
+    <script src="pet/skin-render.js"></script>
     <script src="scripts/capabilities.js"></script>
     <script src="scripts/float.js"></script>
     <!-- 可插拔能力：missing 时 onerror 保证桌宠壳层照常运行

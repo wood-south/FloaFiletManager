@@ -115,6 +115,26 @@ body {
   animation: pet-breathe 3s ease-in-out infinite;
 }
 
+/* 动画帧画布（阶段 8.6）
+   仅在 sprite 皮肤成功加载后才显示；默认为 [hidden] 且 SVG 在场，
+   因此不装皮肤时外观与接入前完全一致。
+   画布的像素尺寸由图集单帧尺寸决定（由渲染器写入 width/height），
+   CSS 负责把它缩放进 90×90 的视觉框。 */
+.pet-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pet-canvas[hidden] {
+  display: none;
+}
+
+/* 换用皮肤自带的 SVG 时，隐藏内置 SVG（两者互斥显示） */
+.pet-svg[hidden] {
+  display: none;
+}
+
 .pet-body.snap-left .pet-avatar {
   transform: rotate(90deg);
 }

@@ -246,4 +246,61 @@ for (const d of tmpRoots) {
   try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* 忽略 */ }
 }
 
+console.log('\n[7] 渲染层接线契约（通道 ↔ preload ↔ 浮窗壳层）');
+{
+  const preload = fs.readFileSync(path.join(root, 'preload.js'), 'utf8');
+  const floatJs = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  const floatHtml = fs.readFileSync(path.join(root, 'renderer', 'float.html'), 'utf8');
+
+  ok('preload 暴露了 7 个皮肤相关方法', () => {
+    ['listSkins', 'selectSkinDirectory', 'selectSkinZip', 'importSkin', 'exportSkin',
+      'applySkin', 'getActiveSkin'].forEach((m) => {
+      assert.ok(preload.includes(m + ':'), 'preload 缺少 ' + m);
+    });
+  });
+  ok('每个方法都桥接到同名 invoke 通道', () => {
+    assert.ok(preload.includes("invoke('list-skins')"));
+    assert.ok(preload.includes("invoke('select-skin-directory')"));
+    assert.ok(preload.includes("invoke('select-skin-zip')"));
+    assert.ok(preload.includes("invoke('import-skin'"));
+    assert.ok(preload.includes("invoke('export-skin'"));
+    assert.ok(preload.includes("invoke('apply-skin'"));
+    assert.ok(preload.includes("invoke('get-active-skin')"));
+  });
+  ok('preload 提供换肤广播订阅（onSkinChanged → skin-changed）', () => {
+    assert.ok(preload.includes('onSkinChanged'), 'preload 缺少 onSkinChanged');
+    assert.ok(preload.includes("ipcRenderer.on('skin-changed'"), '未订阅 skin-changed');
+  });
+  ok('主进程换肤后会广播 skin-changed', () => {
+    const src = fs.readFileSync(path.join(root, 'src', 'main', 'ipc', 'skin.js'), 'utf8');
+    assert.ok(src.includes("send('skin-changed'"), '主进程未广播 skin-changed');
+    assert.ok(src.includes('broadcastSkinChanged'), '缺少广播函数');
+  });
+  ok('浮窗壳层加载了帧渲染所需的三个脚本（顺序：behavior → frames → skin-render）', () => {
+    const iBehavior = floatHtml.indexOf('pet/behavior.js');
+    const iFrames = floatHtml.indexOf('pet/frames.js');
+    const iRender = floatHtml.indexOf('pet/skin-render.js');
+    const iFloat = floatHtml.indexOf('scripts/float.js');
+    assert.ok(iBehavior > 0 && iFrames > 0 && iRender > 0, '缺少脚本引用');
+    assert.ok(iBehavior < iFrames && iFrames < iRender && iRender < iFloat,
+      '脚本顺序错误：必须先加载依赖再加载 float.js');
+  });
+  ok('浮窗 HTML 里有帧画布与右键「设置」按钮', () => {
+    assert.ok(floatHtml.includes('id="petCanvas"'), '缺少 petCanvas');
+    assert.ok(/data-action="settings"/.test(floatHtml), '右键菜单缺少设置入口');
+  });
+  ok('浮窗壳层订阅换肤广播并响应设置入口', () => {
+    assert.ok(floatJs.includes('onSkinChanged'), '壳层未订阅换肤广播');
+    assert.ok(floatJs.includes('applySkinToShell'), '缺少换肤应用函数');
+    assert.ok(/case 'settings':/.test(floatJs), '缺少设置按钮的处理分支');
+    assert.ok(floatJs.includes('openSettings'), '未调用 openSettings');
+  });
+  ok('skinRenderer 在文件顶部声明（避免 TDZ）', () => {
+    const declIdx = floatJs.indexOf('let skinRenderer = null');
+    const useIdx = floatJs.indexOf('skinRenderer.setState');
+    assert.ok(declIdx > 0, '缺少顶部声明');
+    assert.ok(declIdx < useIdx, '声明必须在首次使用之前');
+  });
+}
+
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));

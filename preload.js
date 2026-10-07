@@ -75,7 +75,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportSkin: (skinId) => ipcRenderer.invoke('export-skin', { skinId }),
   applySkin: (skinId) => ipcRenderer.invoke('apply-skin', { skinId }),
   getActiveSkin: () => ipcRenderer.invoke('get-active-skin'),
-  // 主进程能力清单与启用开关（阶段 5：关闭的能力不注册其 IPC 通道，重启生效）
+  /* 主进程换肤后广播（带上已内联图片的皮肤数据），
+     使「设置窗口换肤 → 已开着的浮窗立刻换装」 */
+  onSkinChanged: (cb) => {
+    const fn = (_event, skin) => cb(skin);
+    ipcRenderer.on('skin-changed', fn);
+    return () => ipcRenderer.removeListener('skin-changed', fn);
+  },  // 主进程能力清单与启用开关（阶段 5：关闭的能力不注册其 IPC 通道，重启生效）
   capabilityList: () => ipcRenderer.invoke('capability-list'),
   capabilityEnable: (capabilityId, enabled) => ipcRenderer.invoke('capability-enable', { capabilityId, enabled }),
   startDrag: (filePath, iconDataUrl) => ipcRenderer.invoke('start-drag', { filePath, iconDataUrl }),

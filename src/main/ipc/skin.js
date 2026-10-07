@@ -226,6 +226,23 @@ function register({ userDataDir, rootDir, loadConfig, saveConfig }) {
     return withAssets;
   }
 
+  /* 换肤后广播给所有窗口，使「设置里换了皮肤 → 已开着的浮窗立刻换装」。
+     BrowserWindow 在测试环境不存在，因此整体包在 try 里：
+     广播失败不应让换肤本身失败。 */
+  function broadcastSkinChanged(skin) {
+    try {
+      const { BrowserWindow } = require('electron');
+      if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') return;
+      for (const win of BrowserWindow.getAllWindows()) {
+        try {
+          if (win && !win.isDestroyed() && win.webContents) {
+            win.webContents.send('skin-changed', skin);
+          }
+        } catch (_) { /* 单个窗口失败不影响其它窗口 */ }
+      }
+    } catch (_) { /* 环境不支持广播（测试） */ }
+  }
+
   /* 应用皮肤：持久化到配置并返回该皮肤的完整描述，
      由渲染层负责立即换装（不广播给所有窗口 ——
      「浮窗启动时主动查询」更简单，也不会在窗口尚未创建时丢事件）。 */
@@ -256,7 +273,11 @@ function register({ userDataDir, rootDir, loadConfig, saveConfig }) {
       const cfg = readConfig();
       cfg.activeSkin = skinId;
       writeConfig(cfg);
-      return { success: true, skin: materialize(info.skin, found.dir, found.source) };
+      // 变量名不能叫 payload：本处理器的入参就叫 payload，同作用域内
+      // 再 const payload 会形成暂时性死区（Cannot access before initialization）
+      const skinPayload = materialize(info.skin, found.dir, found.source);
+      broadcastSkinChanged(skinPayload);
+      return { success: true, skin: skinPayload };
     } catch (e) {
       console.error('应用皮肤失败:', e);
       return { success: false, error: e.message };
