@@ -1,3 +1,35 @@
+/* ============================================================
+   Dock 外观变量（阶段 7.2）
+   ------------------------------------------------------------
+   原先这些变量由 dock.js 写在 #dockContainer 上。提到 :root 有两个原因：
+   1. 浮层（音量/WiFi）与右键菜单挂在 body 下，需要继承到同一组变量；
+   2. 阶段 8 的「主题包」只需覆盖 :root 上的一组变量即可换肤，
+      不必知道 Dock 的 DOM 结构。
+
+   默认值 = 接入前的现状，因此不换主题时外观完全不变。
+   ============================================================ */
+:root {
+  --dock-radius: 24px;
+  --dock-bg: #1e1e1e;
+  /* 玻璃模式 */
+  --dock-glass-blur: 20px;
+  --dock-glass-opacity: 0.2;
+  /* 高斯模式 */
+  --dock-gaussian-blur: 16px;
+  /* 亚克力模式 */
+  --dock-acrylic-blur: 60px;
+  --dock-acrylic-opacity: 0.08;
+  /* 自定义模式 */
+  --dock-custom-color: #1e1e1e;
+  --dock-custom-opacity: 0.5;
+  --dock-custom-blur: 40px;
+  /* 布局尺寸 */
+  --dock-sep-height: 32px;
+  /* 图标按钮尺寸，以及按钮内图标的尺寸（由 dock.js 按设置写入，见 applyIconSizes） */
+  --dock-item-size: 52px;
+  --dock-icon-size: 28px;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -154,8 +186,8 @@ body::-webkit-scrollbar {
 .dock-power,
 .dock-item,
 .dock-tray-item {
-  width: 52px;
-  height: 52px;
+  width: var(--dock-item-size, 52px);
+  height: var(--dock-item-size, 52px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -177,8 +209,8 @@ body::-webkit-scrollbar {
 .dock-start svg,
 .dock-power svg,
 .dock-tray-item svg {
-  width: 28px;
-  height: 28px;
+  width: var(--dock-icon-size, 28px);
+  height: var(--dock-icon-size, 28px);
 }
 
 .dock-power {
@@ -316,14 +348,14 @@ body::-webkit-scrollbar {
 }
 
 .dock-item svg {
-  width: 28px;
-  height: 28px;
+  width: var(--dock-icon-size, 28px);
+  height: var(--dock-icon-size, 28px);
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
 
 .dock-item img {
-  width: 28px;
-  height: 28px;
+  width: var(--dock-icon-size, 28px);
+  height: var(--dock-icon-size, 28px);
   object-fit: contain;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }

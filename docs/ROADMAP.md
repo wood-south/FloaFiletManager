@@ -524,11 +524,55 @@ id 就叫 `dock`，而 v2 又用 `dock` 作为 `dockSettings` 的分组名。两
 | 项 | 内容 | 状态 |
 | --- | --- | --- |
 | 7.5 | **多显示器支持**（`getAllDisplays` + 按窗口所在屏钳制 + 拔屏收回窗口） | ✅ `src/main/display.js` |
-| 7.1 | `applyIconSizes` / `autoFitDockWindow` 的内联样式改为 CSS 变量 | ⬜ 见下 |
-| 7.2 | `--dock-*` 变量从 `#dockContainer` 提到 `:root` | ⬜ 见下 |
+| 7.2 | `--dock-*` 变量从 `#dockContainer` 提到 `:root`（主题包换肤前提） | ✅ |
+| 7.1 | `applyIconSizes` 的逐元素内联样式改为 CSS 变量 | ✅ |
+| 7.1b | `autoFitDockWindow` 的**容器宽度**内联样式改为 CSS 变量 | ⬜ 见下 |
 | 7.3 | 磁贴放大（按距离缩放邻位，现仅一级邻居） | ⬜ |
 | 7.4 | 自动隐藏 + 触底唤出；启动跳动动画；通知徽标 | ⬜ |
 | 7.6 | 快捷图标拖拽排序 | ⬜ |
+
+**7.2 外观变量提到 `:root`（本轮）**
+
+原先 `applyDockStyle` 把 11 个外观变量写在 `#dockContainer` 上。提到 `:root` 有两个理由：
+1. 音量/WiFi 浮层与右键菜单**挂在 body 下**，写在容器上它们继承不到；
+2. 阶段 8 的主题包只需覆盖 `:root` 上一组变量即可换肤，不必知道 Dock 的 DOM 结构。
+
+`:root` 里显式声明了全部 13 个变量的**默认值（= 接入前现状）**，
+因此不换主题时外观完全不变，也让「有哪些变量可覆盖」变成可读的清单。
+
+**7.1 图标尺寸变量化（本轮）**
+
+`applyIconSizes` 原先做 3 次 `querySelectorAll` + 约 20 次内联 `width/height` 写入
+（每次新图标插入都要重跑一遍）。现在只写两个变量，尺寸由 CSS 选择器消费：
+
+```
+--dock-item-size   按钮容器尺寸     ← 由 .dock-start/.dock-power/.dock-item/.dock-tray-item 消费
+--dock-icon-size   按钮内图标尺寸   ← 由 三处 svg/img 规则消费
+```
+
+好处：新增图标**自动继承**（CSS 直接命中，无需再遍历），主题包也能覆盖。
+
+顺带发现并修掉一处重复：`applyDockStyle` 还在写 `dockPanel.style.borderRadius`，
+而 dock.css 的 `.dock-panel` 已经消费 `var(--dock-radius)` —— 两者同值、纯属冗余，
+已删除。内联样式写入实测变化：
+
+| 模式 | 旧 → 新 |
+| --- | --- |
+| `style.width` | 5 → 2 |
+| `style.height` | 3 → 0 |
+| `style.borderRadius` | 1 → 0 |
+| `style.setProperty` | 13 → 15 |
+
+**检测**：`test/dock-geometry.test.js` 扩至 **32 项断言**，新增两组源码级契约：
+`:root` 声明了全部 13 个变量、`dock.js` 不再以 `#dockContainer` 为变量宿主、
+`applyIconSizes` 只写变量（断言其函数体内**不再有** `style.width/height`
+与 `querySelectorAll`）、CSS 里不再硬编码 52px、圆角只由变量驱动。
+自检脚本仍 15 个，断言 427 → **435 项**；`npm test` 全绿、`npm run lint` 全绿。
+
+**明确未完成**：`autoFitDockWindow` 里仍有 2 处 `dockItems.style.width`
+（可见区宽度）与一处 `dockPanel.style.width` 重置 —— 这是**每个 item 宽度累加出来的
+容器宽度**，不是固定尺寸，且与滚动/溢出裁剪逻辑耦合，改动需要重新回归滚动行为，
+故与 7.3/7.4/7.6 一并留到后续。
 
 **7.5 多显示器（本轮完成，也是 ROADMAP 所指「当前的明显缺口」）**
 

@@ -259,25 +259,22 @@ async function renderNavItems() {
   }
 }
 
-/* 应用图标尺寸到所有按钮和图标 */
+/* 应用图标尺寸（阶段 7.1）
+   ------------------------------------------------------------
+   原先这里遍历 .dock-item/.dock-start/.dock-power/.dock-tray-item 逐个写
+   width/height 内联样式（3 次 querySelectorAll + 约 20 次样式写入），
+   每次有新图标插入都要重新跑一遍。
+
+   现在只写两个 CSS 变量，尺寸由 dock.css 里的选择器消费：
+     --dock-item-size  按钮容器尺寸
+     --dock-icon-size  按钮内 图标 尺寸（约 0.54 倍）
+   好处：新增图标自动继承（CSS 直接命中），也便于主题包覆盖。 */
 function applyIconSizes(iconSize) {
   const sz = iconSize || 52;
   const svgSize = Math.round(sz * 0.54);
-  // 更新所有按钮容器
-  document.querySelectorAll('.dock-item, .dock-start, .dock-power, .dock-tray-item').forEach(el => {
-    el.style.width = sz + 'px';
-    el.style.height = sz + 'px';
-  });
-  // 更新所有SVG图标
-  document.querySelectorAll('.dock-item svg, .dock-start svg, .dock-power svg, .dock-tray-item svg').forEach(el => {
-    el.style.width = svgSize + 'px';
-    el.style.height = svgSize + 'px';
-  });
-  // 更新img图标
-  document.querySelectorAll('.dock-item img').forEach(el => {
-    el.style.width = svgSize + 'px';
-    el.style.height = svgSize + 'px';
-  });
+  const target = document.documentElement;
+  target.style.setProperty('--dock-item-size', sz + 'px');
+  target.style.setProperty('--dock-icon-size', svgSize + 'px');
 }
 
 /* ========== 滚动控制（transform 方案，避免 overflow 裁剪上浮效果） ========== */
@@ -1305,7 +1302,9 @@ function applyDockStyle(settings) {
   const customBlur = settings.customBlur ?? 40;
 
   // 批量设置 CSS 变量（仅设置 dock.css 中真正消费的变量）
-  const target = dockContainer || document.documentElement;
+  // 阶段 7.2：写到 :root 而不是 #dockContainer —— 浮层/右键菜单挂在 body 下，
+  // 需要继承同一组变量；阶段 8 的主题包也只需覆盖 :root 即可换肤。
+  const target = document.documentElement;
   target.style.setProperty('--dock-radius', radius + 'px');
   target.style.setProperty('--dock-bg', bgColor);
   // 玻璃模式
@@ -1328,9 +1327,9 @@ function applyDockStyle(settings) {
     dockContainer.classList.toggle('only-shortcuts', onlyShortcuts);
   }
 
-  // 切换模糊模式
+  // 切换模糊模式（圆角已由上面的 --dock-radius 变量驱动，
+  // dock.css 的 .dock-panel 直接消费它，无需再写内联圆角）
   if (dockPanel) {
-    dockPanel.style.borderRadius = radius + 'px';
     dockPanel.classList.remove('glass-mode', 'gaussian-mode', 'acrylic-mode', 'custom-mode');
     dockPanel.classList.add(blurMode + '-mode');
   }

@@ -173,4 +173,65 @@ ok('dock.html 默认文案与渲染文案一致', () => {
     'dock.html 中 wiredStatusName 的默认文案与「有线连接」不一致');
 });
 
+console.log('\n[9] 外观变量提到 :root（阶段 7.2）');
+{
+  // 主题包只需覆盖 :root 上一组变量即可换肤，因此变量必须定义在 :root，
+  // 而且不能再由 JS 写在 #dockContainer 上（浮层/菜单挂在 body 下继承不到）
+  const rootBlock = cssBlock(':root');
+  const required = [
+    '--dock-radius', '--dock-bg', '--dock-glass-blur', '--dock-glass-opacity',
+    '--dock-gaussian-blur', '--dock-acrylic-blur', '--dock-acrylic-opacity',
+    '--dock-custom-color', '--dock-custom-opacity', '--dock-custom-blur',
+    '--dock-sep-height', '--dock-item-size', '--dock-icon-size'
+  ];
+  ok(':root 声明了全部 Dock 外观变量（' + required.length + ' 个）', () => {
+    const missing = required.filter((v) => !rootBlock.includes(v + ':'));
+    assert.deepStrictEqual(missing, [], '缺少: ' + missing.join(', '));
+  });
+  ok('dock.js 不再把外观变量写到 #dockContainer 上', () => {
+    assert.ok(!/dockContainer\s*\|\|\s*document\.documentElement/.test(dockSrc),
+      '仍在使用 dockContainer 作为变量宿主');
+    assert.ok(/const target = document\.documentElement/.test(dockSrc),
+      '未改为写入 :root');
+  });
+  ok('dock.css 的模糊模式仍消费 :root 变量', () => {
+    assert.ok(dockCss.includes('var(--dock-glass-blur'), '玻璃模糊未走变量');
+    assert.ok(dockCss.includes('var(--dock-acrylic-blur'), '亚克力模糊未走变量');
+    assert.ok(dockCss.includes('var(--dock-custom-blur'), '自定义模糊未走变量');
+  });
+}
+
+console.log('\n[10] 图标尺寸改为变量驱动（阶段 7.1）');
+{
+  ok('dock.css 用 --dock-item-size 驱动按钮尺寸', () => {
+    assert.ok(/width:\s*var\(--dock-item-size/.test(dockCss), '按钮宽度未走变量');
+    assert.ok(/height:\s*var\(--dock-item-size/.test(dockCss), '按钮高度未走变量');
+  });
+  ok('dock.css 用 --dock-icon-size 驱动图标尺寸', () => {
+    const hits = dockCss.match(/var\(--dock-icon-size/g) || [];
+    assert.ok(hits.length >= 3,
+      '图标尺寸消费点不足（button svg / item svg / item img 共 3 处），实际 ' + hits.length);
+  });
+  ok('dock.css 不再硬编码 52px / 当图标用的 28px', () => {
+    assert.ok(!/width:\s*52px/.test(dockCss), '仍有 52px 硬编码宽度');
+    assert.ok(!/height:\s*52px/.test(dockCss), '仍有 52px 硬编码高度');
+  });
+  ok('applyIconSizes 只写变量，不再逐个元素写内联样式', () => {
+    const start = dockSrc.indexOf('function applyIconSizes(');
+    assert.ok(start >= 0, '未找到 applyIconSizes');
+    const body = dockSrc.slice(start, dockSrc.indexOf('\n}', start));
+    assert.ok(/setProperty\('--dock-item-size'/.test(body), '未写 --dock-item-size');
+    assert.ok(/setProperty\('--dock-icon-size'/.test(body), '未写 --dock-icon-size');
+    assert.ok(!/style\.width/.test(body), '仍在写内联 width');
+    assert.ok(!/style\.height/.test(body), '仍在写内联 height');
+    assert.ok(!/querySelectorAll/.test(body), '仍在遍历元素逐个设置（变量方案下不需要）');
+  });
+  ok('圆角同样只由 --dock-radius 驱动，不再写内联 borderRadius', () => {
+    assert.ok(!/dockPanel\.style\.borderRadius/.test(dockSrc),
+      '仍在写内联圆角，与 --dock-radius 重复');
+    assert.ok(/\.dock-panel[\s\S]{0,200}?border-radius:\s*var\(--dock-radius/.test(dockCss),
+      '.dock-panel 未消费 --dock-radius');
+  });
+}
+
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
