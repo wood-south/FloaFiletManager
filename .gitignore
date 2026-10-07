@@ -37,3 +37,6 @@ Desktop.ini
 
 # Uploads (user data)
 uploads/
+
+# 可分享的示例皮肤包（由 tools/pack-demo-cat.js 生成，不入库避免与源文件漂移）
+demo-cat.zip

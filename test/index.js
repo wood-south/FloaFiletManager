@@ -18,6 +18,7 @@ module.exports = [
   { name: '主进程日志落盘 logger.js', file: 'logger.test.js' },
   { name: 'CAPABILITIES.md 与注册表一致', file: 'capabilities-doc.test.js' },
   { name: 'PET_ANIMATION_SPEC.md 与实现一致', file: 'pet-animation-doc.test.js' },
+  { name: '内置示例皮肤 demo-cat', file: 'demo-skin.test.js' },
   { name: '共用 UI 原语 primitives.js', file: 'primitives.test.js' },
   { name: '能力层契约 capabilities.js + quick-upload', file: 'capabilities.test.js' },
   { name: '点击穿透仲裁 penetration.js', file: 'penetration.test.js' },
