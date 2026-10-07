@@ -301,13 +301,6 @@ menuRing.addEventListener('click', async (e) => {
       closeMenu();
       window.electronAPI.openThisComputer();
       break;
-    case 'settings':
-      // 打开设置窗口（与 Dock 右键的「打开设置」走同一通道）
-      closeMenu();
-      if (window.electronAPI?.openSettings) {
-        window.electronAPI.openSettings();
-      }
-      break;
     case 'pin':
       // 不关闭菜单，切换置顶状态
       const newState = await window.electronAPI.toggleAlwaysOnTop();
@@ -348,6 +341,13 @@ quitRing.addEventListener('click', (e) => {
   if (action === 'quit') {
     closeQuit();
     window.electronAPI.quitApp();
+  } else if (action === 'settings') {
+    // 设置入口与「退出」同在右键环里（右键弹出），
+    // 与 Dock 右键的「打开设置」走同一通道
+    closeQuit();
+    if (window.electronAPI?.openSettings) {
+      window.electronAPI.openSettings();
+    }
   }
 });
 

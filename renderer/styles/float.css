@@ -465,6 +465,11 @@ body {
   top: 0;
   left: -48px;
 }
+/* 右键环：设置与退出成对，一上一下（原来只有退出，是孤零一个按钮） */
+.quit-ring .menu-btn[data-action='settings'] {
+  top: 48px;
+  left: 0;
+}
 .quit-ring .quit-btn {
   top: -48px;
   left: 0;
@@ -528,6 +533,11 @@ body {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
   transition-delay: 0s;
+}
+.quit-ring.open .menu-btn[data-action='settings'] {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  transition-delay: 0.05s;
 }
 
 /* ======== 拖放 ======== */

@@ -297,11 +297,45 @@ console.log('\n[7] 渲染层接线契约（通道 ↔ preload ↔ 浮窗壳层�
     assert.ok(floatHtml.includes('id="petCanvas"'), '缺少 petCanvas');
     assert.ok(/data-action="settings"/.test(floatHtml), '右键菜单缺少设置入口');
   });
+  ok('设置入口在**右键环**里（与「退出」成对），不在左键菜单环', () => {
+    // 按 HTML 出现顺序切出两个环的内容再判断归属
+    const menuStart = floatHtml.indexOf('class="menu-ring"');
+    const menuEnd = floatHtml.indexOf('</div>', floatHtml.indexOf('class="quit-ring"'));
+    const quitStart = floatHtml.indexOf('class="quit-ring"');
+    assert.ok(menuStart > 0 && quitStart > menuStart, '缺少 menu-ring / quit-ring');
+    const menuBlock = floatHtml.slice(menuStart, quitStart);
+    const quitBlock = floatHtml.slice(quitStart);
+    assert.ok(!/data-action="settings"/.test(menuBlock),
+      '设置按钮不应还在左键菜单环里');
+    assert.ok(/data-action="settings"/.test(quitBlock),
+      '设置按钮应在右键环里');
+    assert.ok(/data-action="quit"/.test(quitBlock), '退出按钮也应在右键环里');
+  });
+  ok('右键环的点击处理里同时有 settings 与 quit 分支', () => {
+    const quitHandler = floatJs.slice(floatJs.indexOf("quitRing.addEventListener('click'"));
+    const body = quitHandler.slice(0, quitHandler.indexOf('});'));
+    assert.ok(/action === 'settings'/.test(body), '右键环未处理 settings');
+    assert.ok(/action === 'quit'/.test(body), '右键环未处理 quit');
+    assert.ok(body.includes('openSettings'), '右键环设置分支未调用 openSettings');
+  });
   ok('浮窗壳层订阅换肤广播并响应设置入口', () => {
     assert.ok(floatJs.includes('onSkinChanged'), '壳层未订阅换肤广播');
     assert.ok(floatJs.includes('applySkinToShell'), '缺少换肤应用函数');
-    assert.ok(/case 'settings':/.test(floatJs), '缺少设置按钮的处理分支');
     assert.ok(floatJs.includes('openSettings'), '未调用 openSettings');
+  });
+  ok('左键菜单环仍保留 4 个按钮，与 nth-child 定位一致', () => {
+    // 菜单环的按钮位置由 .menu-ring .menu-btn:nth-child(1..4) 决定，
+    // 多一个按钮就会与 CSS 对不上（这也是把设置挪到右键环的原因之一）
+    const menuStart = floatHtml.indexOf('class="menu-ring"');
+    const quitStart = floatHtml.indexOf('class="quit-ring"');
+    const menuBlock = floatHtml.slice(menuStart, quitStart);
+    const n = (menuBlock.match(/data-action="/g) || []).length;
+    assert.strictEqual(n, 4, '左键菜单环应有 4 个按钮，实际 ' + n);
+    const css = fs.readFileSync(path.join(root, 'renderer', 'styles', 'float.css'), 'utf8');
+    for (let i = 1; i <= 4; i++) {
+      assert.ok(css.includes('.menu-ring .menu-btn:nth-child(' + i + ')'),
+        '缺少 nth-child(' + i + ') 定位规则');
+    }
   });
   ok('skinRenderer 在文件顶部声明（避免 TDZ）', () => {
     const declIdx = floatJs.indexOf('let skinRenderer = null');
