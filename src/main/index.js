@@ -28,6 +28,14 @@ if (!gotTheLock) {
   const { iconCache, loadIconCache, saveIconCache, scheduleSaveIconCache } = require('./services/icon-cache');
   const iconExtractor = require('./services/icon-extractor');
   const capabilities = require('./capabilities');
+  const { createLogger } = require('./services/logger');
+
+  /* 日志落盘（阶段 9）：主进程有近百处 console.*，此前完全不落盘 ——
+     打包后用户报问题时拿不到任何现场信息。
+     这里给 console 打补丁把输出镜像到 userData/main.log，不改动调用点。 */
+  const logger = createLogger({ dir: userDataDir });
+  logger.attach();
+  console.log('主进程启动 pid=' + process.pid + ' 日志文件=' + logger.filePath());
 
   /** 显示器变化监听（阶段 7）：应用退出时解除 */
   let displayWatcher = null;

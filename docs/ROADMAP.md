@@ -718,13 +718,65 @@ id 就叫 `dock`，而 v2 又用 `dock` 作为 `dockSettings` 的分组名。两
 
 ### 阶段 9：工程质量与文档收口
 
-| 项 | 内容 |
-| --- | --- |
-| 9.1 | 为 `snap.js`、路径校验、配置迁移补 `node:test` 单测 |
-| 9.2 | `lint` 脚本纳入 HTML/CSS（`prettier --check`） |
-| 9.3 | 主进程日志落盘 `userData/logs/` |
-| 9.4 | `docs/` 统一校对：`ARCHITECTURE.md` 重构、`IPC_REFERENCE.md` 生成、README 补皮肤章节 |
-| 9.5 | 发布前加"文档声称 vs 工作区实际"核对步骤，杜绝再次漂移 |
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 9.3 | 主进程日志落盘（`userData/main.log`，含大小轮转） | ✅ |
+| 9.5 | **文档 ↔ 代码一致性断言**（`CAPABILITIES.md` 清单由测试核对） | ✅ |
+| 9.5b | `docs/CAPABILITIES.md`（新增） | ✅ |
+| 9.1 | 为其余模块补单测 | ⬜ 已有 19 个自检脚本、510 项断言，覆盖面见下 |
+| 9.2 | `lint` 脚本纳入 HTML/CSS | ⬜ 见下 |
+| 9.4 | `docs/` 统一校对：`ARCHITECTURE.md`、`IPC_REFERENCE.md`、README 补皮肤章节 | ⬜ |
+| 9.5c | 发布前「文档声称 vs 工作区实际」核对步骤 | ⬜ |
+
+**9.3 主进程日志落盘（本轮完成）**
+
+背景：主进程有 **91 处 `console.*`**，但**完全没有落盘**。打包后用户报
+「图标不显示」「Dock 位置不对」时，我们拿不到任何现场信息 —— 看不到控制台，
+也没有日志文件可要。新增 `src/main/services/logger.js`，启动时
+（`src/main/index.js` 拿到 userData 路径后立即）给 `console` 打补丁，
+把 `log/info/warn/error` 镜像到 `userData/main.log`。
+
+设计取舍：
+
+- **不改动那 91 处调用点** —— 逐个改成 `logger.xxx` 会造出一大批无价值 diff，也更易漏改。
+- **同步写入**：主进程日志量很低，异步写会引入「进程崩溃时最后几条丢失」，
+  而这恰是日志最该留下的部分。单条写入异常一律吞掉，绝不让日志弄挂主流程。
+- **大小轮转**：超过 1MB 改名 `.1` 重新开始，避免无限增长。
+- **转发保真**：日志里 `log/info` 都记 `info`，但**转发按原方法名**调用，
+  不把 `console.log` 悄悄变成 `console.info`（本模块的承诺是「保留原有行为」）。
+- 纯逻辑（格式化、轮转判定）与 IO 分离，因此可注入 fs 完整测试。
+
+**9.5 文档一致性断言（本轮完成）**
+
+新增 `docs/CAPABILITIES.md`，并且**不让它靠自觉维护**：
+`test/capabilities-doc.test.js` 解析文档里 `<!-- CAPABILITIES-TABLE-* -->`
+之间的表格，与 `src/main/capabilities` 注册表逐项核对
+（id 集合、名称、通道数、合计、以及文档自身逐行之和是否等于合计）。
+改代码不改文档 → 测试失败。
+
+> 这条正是针对本项目真实踩过的坑：CHANGELOG 曾出现「声称已删除但实际没删」的漂移。
+> 文档要么被机制守住，要么迟早失真。
+
+过程中该测试立刻抓到一处不一致：我在文档表格里把能力名写成了「文件管理（含图标）」
+「皮肤包（列出/导入/导出）」等**带注解的版本**，与注册表里的 `name` 不符。
+已把 `name` 列改为与注册表**逐字一致**，注解挪到新增的「说明」列 ——
+即"可读的描述"与"被断言的字段"分开，两者都要，但不能混在一格里。
+
+**检测（本轮）**：新增 `test/logger.test.js` **31 项断言**（格式化 / Error 带堆栈 /
+循环引用不炸 / 轮转判定 / 写盘失败不影响主流程 / console 镜像保真 / detach 还原 /
+`readTail`）；新增 `test/capabilities-doc.test.js` **12 项断言**。
+自检脚本 17 → **19 个**，断言 467 → **510 项**；
+`npm test` 全绿、`npm run lint` 全绿（`node --check` 58 个文件）。
+
+**明确未完成**：
+
+- **9.2 `lint` 纳入 HTML/CSS 未做**：`prettier --check` 一旦纳入，现有 HTML/CSS
+  会立刻产生大量格式差异，需要一次独立的格式化提交才能保持 CI 绿。
+  本轮不做是为了避免把「格式化大 diff」和「功能改动」混在一起 —— 这是本方案
+  一贯坚持的「一次只做一件事」。建议后续单独一个 `style:` 提交处理。
+- **9.4 文档校对未做**：`TECHNICAL_GUIDE.md`（774 行）/`PROBLEM_SOLUTIONS.md`（723 行）
+  内容尚可，但 `README.md` 缺「皮肤」章节；`ARCHITECTURE.md`、`IPC_REFERENCE.md`
+  未新建（当前 `CAPABILITIES.md` 已覆盖 IPC 契约部分）。
 
 ---
 

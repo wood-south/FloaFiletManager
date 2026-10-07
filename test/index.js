@@ -7,6 +7,8 @@ module.exports = [
   { name: '多显示器选屏与钳制 display.js', file: 'display.test.js' },
   { name: '皮肤包仓库 skin-store.js', file: 'skin-store.test.js' },
   { name: '皮肤导入来源白名单 skin.js', file: 'skin-ipc.test.js' },
+  { name: '主进程日志落盘 logger.js', file: 'logger.test.js' },
+  { name: 'CAPABILITIES.md 与注册表一致', file: 'capabilities-doc.test.js' },
   { name: '共用 UI 原语 primitives.js', file: 'primitives.test.js' },
   { name: '能力层契约 capabilities.js + quick-upload', file: 'capabilities.test.js' },
   { name: '点击穿透仲裁 penetration.js', file: 'penetration.test.js' },
