@@ -72,6 +72,21 @@ function ok(name, fn) {
   catch (e) { console.log('  FAIL  ' + name + ' -> ' + e.message); process.exitCode = 1; }
 }
 
+/** 解析 CSS 规则：返回 [{ selectors:[...], decls:'...' }]
+ *  prettier 会把多组选择器拆成多行，因此按「块」解析而不是按行。 */
+function parseCssRules(css) {
+  const noComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(noComments)) !== null) {
+    const selectors = m[1].split(',').map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const decls = m[2].replace(/\s+/g, '').replace(/;+$/, '');
+    rules.push({ selectors, decls });
+  }
+  return rules;
+}
+
 console.log('\n[1] 模块加载与通道注册');
 {
   ok('register 接受缺失路径而不抛错', () => {
@@ -493,6 +508,38 @@ console.log('\n[9] 显隐切换只有一个入口（防「两只猫叠加」）'
   ok('提供 petDebug / petTest 诊断入口', () => {
     assert.ok(/window\.petDebug\s*=/.test(floatJs2), '缺少 petDebug');
     assert.ok(/window\.petTest\s*=/.test(floatJs2), '缺少 petTest');
+  });
+  ok('非内置模式下必须停掉「内置 SVG 的状态动画」（否则两套动画打架）', () => {
+    // .state-* 的动画是给内置 SVG 猫画的，却作用在 .pet-avatar-spin ——
+    // 那是帧画布的父容器。不管的话 CSS 会同时缩放容器，把画布挤压变形，
+    // 表现为"画面在抖、动作之间难以分辨"。
+    //
+    // 注意选择器常被 prettier 拆成多行、且多组选择器共用一个声明块，
+    // 所以不能按"选择器紧跟 {"去匹配，必须按规则块找。
+    const rules = parseCssRules(floatCss);
+    const animated = ['.pet-avatar-spin', '.pet-shadow', '.eyes', '.pupil'];
+    ['sprite', 'skin'].forEach((m) => {
+      animated.forEach((sel) => {
+        const hit = rules.find((r) => r.decls.includes('animation:none') &&
+          r.selectors.some((s) => s.includes("data-pet-visual='" + m + "'") && s.includes(sel)));
+        assert.ok(hit, m + ' 模式缺少 ' + sel + ' 的 animation:none 规则');
+      });
+    });
+  });
+  ok('三种画面模式互斥：同一时刻只有一个可见', () => {
+    const rules = parseCssRules(floatCss);
+    const expect = {
+      builtin: ['.pet-canvas', '.pet-skin-img'],
+      sprite: ['.pet-svg', '.pet-skin-img'],
+      skin: ['.pet-svg', '.pet-canvas']
+    };
+    Object.entries(expect).forEach(([m, sels]) => {
+      sels.forEach((sel) => {
+        const hit = rules.find((r) => r.decls.includes('display:none') &&
+          r.selectors.some((s) => s.includes("data-pet-visual='" + m + "'") && s.includes(sel)));
+        assert.ok(hit, m + ' 模式未隐藏 ' + sel + '（会出现图像叠加）');
+      });
+    });
   });
 }
 

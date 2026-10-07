@@ -456,6 +456,33 @@ body {
   animation: none;
 }
 
+/* 非内置模式下必须关掉「内置 SVG 的状态动画」
+   ------------------------------------------------------------
+   上面那些 .state-* 动画都是给**内置 SVG 猫**画的（呼吸、眨眼、瞳孔移动…），
+   而它们作用在 .pet-avatar-spin —— 那是**帧画布的父容器**。
+   如果不管，帧动画模式下 CSS 会同时缩放/位移整个容器，
+   把画布挤压变形，形成「两套动画打架」：
+   用户看到的就是画面在抖、动作之间难以分辨。
+
+   所以：皮肤帧/皮肤 SVG 模式下，内置动画一律停掉。
+   判定用属性选择器（与显示切换同一套机制），避免又多一处同步点。 */
+.pet-body[data-pet-visual='sprite'] .pet-avatar-spin,
+.pet-body[data-pet-visual='skin'] .pet-avatar-spin,
+.pet-body[data-pet-visual='sprite'] .pet-shadow,
+.pet-body[data-pet-visual='skin'] .pet-shadow,
+.pet-body[data-pet-visual='sprite'] .eyes,
+.pet-body[data-pet-visual='skin'] .eyes,
+.pet-body[data-pet-visual='sprite'] .pupil,
+.pet-body[data-pet-visual='skin'] .pupil {
+  animation: none;
+}
+
+/* 帧画布自带动作，不要再叠加「被拖动/被点击」的形变 */
+.pet-body[data-pet-visual='sprite'] .pet-avatar,
+.pet-body[data-pet-visual='skin'] .pet-avatar {
+  transition: none;
+}
+
 /* ======== 菜单按钮样式 ======== */
 
 .menu-btn {
