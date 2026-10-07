@@ -11,9 +11,13 @@ let floatSnapToDock = null; // 浮窗吸附到 dock 的关系 {side, offsetX, of
 let petVisualAnchor = null;
 
 // 吸附触发距离（像素）
-const SNAP_DISTANCE = 60;
+// 刻意取较小值：吸附要"贴得足够近"才触发，用户一旦往外拖就应立刻脱离。
+// 早期取值 60，导致松手时只要还在 60px 内就被重新吸回，表现为"吸附后拖不动、会弹回"。
+const SNAP_DISTANCE = 26;
 // 吸附后宠物视觉边框与面板之间的间隙（0 = 视觉紧贴）
 const SNAP_VISUAL_GAP = 0;
+// 用户正在手动拖动浮窗：这段时间内不得自动吸附/回吸
+let petDragging = false;
 // 排查吸附问题时设置 DSH_DEBUG_SNAP=1 打开日志（输出到终端）
 const DEBUG_SNAP = !!process.env.DSH_DEBUG_SNAP;
 
@@ -101,14 +105,17 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     // 不再使用手调的 snapInset 常数，改用渲染进程上报的宠物真实视觉框，
     // 这样贴边旋转（视觉框变 90×80）与 hover 缩放时位置依然准确。
     if (newX === bounds.x && newY === bounds.y) {
-      // 统一走 searchDockSnap：锚点缺失时它会直接返回（不做按窗口的错误吸附），
-      // 锚点就绪后由 report-pet-anchor 触发一次同样的搜索来完成吸附
+      // 松手后重新评估吸附：**先清除拖动抑制**，否则搜索会被自己挡掉
+      petDragging = false;
       searchDockSnap({ requireExistingRelation: false });
-      // searchDockSnap 内部已 setPosition；这里同步本地的目标坐标用于后续保存
       const afterBounds = floatWindow.getBounds();
       newX = afterBounds.x;
       newY = afterBounds.y;
       dockSnapSide = floatSnapToDock ? floatSnapToDock.side : null;
+    } else {
+      // 触发了屏幕边缘贴边，不与 Dock 吸附叠加
+      floatSnapToDock = null;
+      dockSnapSide = null;
     }
 
     if (newX !== bounds.x || newY !== bounds.y) {
@@ -242,6 +249,8 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
       width: Math.round(anchor.width),
       height: Math.round(anchor.height)
     };
+    // 用户正在拖动：不做任何自动吸附，避免与手动位移打架
+    if (petDragging) return true;
     // 变化不足 1px 视为相同，避免 hover 过渡期间频繁重算
     if (prev &&
         prev.left === petVisualAnchor.left &&
@@ -261,6 +270,20 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
   });
 
   /**
+   * 标记浮窗是否正在被用户手动拖动。
+   * 拖动期间必须完全停止自动吸附：否则「保持」逻辑会在每一帧把浮窗拉回吸附位置，
+   * 表现为「吸附后拖不动、会弹回」。
+   */
+  ipcMain.handle('set-pet-dragging', (event, dragging) => {
+    petDragging = !!dragging;
+    if (petDragging) {
+      // 开始手动拖动即解除吸附关系，松手后由 save-window-position 重新评估
+      floatSnapToDock = null;
+    }
+    return petDragging;
+  });
+
+  /**
    * 吸附搜索：按当前几何找最近的一侧并建立吸附关系。
    *
    * 注意顺序：**先判定、后移动**。早期实现先计算位置再无条件 setPosition，
@@ -276,6 +299,8 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
   function searchDockSnap(opts) {
     const requireRelation = !opts || opts.requireExistingRelation !== false;
 
+    // 用户正在手动拖动：不吸附
+    if (petDragging) return false;
     if (requireRelation && !floatSnapToDock) return false;
 
     const floatWindow = getFloatWindow();
@@ -333,6 +358,8 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
    */
   function maintainDockSnap() {
     if (!floatSnapToDock) return false;
+    // 用户正在手动拖动：不把浮窗拉回吸附位置
+    if (petDragging) return false;
     const floatWindow = getFloatWindow();
     if (!floatWindow || floatWindow.isDestroyed()) return false;
     if (!petVisualAnchor) return false;

@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDockBounds: () => ipcRenderer.invoke('get-dock-bounds'),
   reportDockPanelOffset: (offset) => ipcRenderer.invoke('report-dock-panel-offset', offset),
   reportPetAnchor: (anchor) => ipcRenderer.invoke('report-pet-anchor', anchor),
+  setPetDragging: (dragging) => ipcRenderer.invoke('set-pet-dragging', dragging),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top'),
   getAlwaysOnTop: () => ipcRenderer.invoke('get-always-on-top'),

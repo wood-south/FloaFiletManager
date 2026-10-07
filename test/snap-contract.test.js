@@ -143,4 +143,37 @@ console.log('\n[5] 拖动窗口移动合并到每帧一次（修复拖动闪动�
   });
 });
 
+console.log('\n[6] 拖动抑制（修复「吸附后拖不动、会弹回」）');
+ok('存在 set-pet-dragging 通道与 petDragging 标记', () => {
+  assert.ok(/set-pet-dragging/.test(windowSrc), '缺少 set-pet-dragging 通道');
+  assert.ok(/let petDragging/.test(windowSrc), '缺少 petDragging 标记');
+});
+ok('搜索与保持路径都受拖动抑制', () => {
+  assert.ok(/if \(petDragging\) return false/.test(extractFunction(windowSrc, 'searchDockSnap')),
+    'searchDockSnap 未抑制');
+  assert.ok(/if \(petDragging\) return false/.test(extractFunction(windowSrc, 'maintainDockSnap')),
+    'maintainDockSnap 未抑制 —— 拖动期间会被逐帧拉回吸附位置');
+});
+ok('松手路径先清除抑制再搜索', () => {
+  const start = windowSrc.indexOf("ipcMain.handle('save-window-position'");
+  const end = windowSrc.indexOf('\n  });', start);
+  const body = windowSrc.slice(start, end);
+  const clearIdx = body.indexOf('petDragging = false');
+  const searchIdx = body.indexOf('searchDockSnap');
+  assert.ok(clearIdx >= 0, 'save-window-position 未清除拖动抑制');
+  assert.ok(searchIdx > clearIdx, '先搜索后清除抑制，搜索会被自己挡掉');
+});
+ok('吸附触发距离已收紧（脱离比贴上更容易）', () => {
+  const m = windowSrc.match(/const SNAP_DISTANCE = (\d+)/);
+  assert.ok(m, '未找到 SNAP_DISTANCE');
+  const value = Number(m[1]);
+  assert.ok(value <= 30, 'SNAP_DISTANCE = ' + value + ' 偏大，松手时容易被重新吸回');
+});
+ok('浮窗在 mousedown/mouseup 通知拖动状态', () => {
+  const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  assert.ok(/setPetDragging\(true\)/.test(floatSrc), '未在开始拖动时通知主进程');
+  assert.ok(/setPetDragging\(false\)/.test(floatSrc), '未在结束拖动时通知主进程');
+  assert.ok(/addEventListener\('blur'/.test(floatSrc), '缺少失焦兜底，拖动抑制可能永久生效');
+});
+
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));

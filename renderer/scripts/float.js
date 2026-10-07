@@ -146,6 +146,18 @@ petBody.addEventListener('mouseleave', () => {
   if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 });
 
+// 兜底：拖动中若窗口失焦（例如鼠标在窗口外松开），
+// 必须解除拖动抑制，否则吸附会被永久禁用
+window.addEventListener('blur', () => {
+  if (isDragging) {
+    isDragging = false;
+    petBody.classList.remove('dragging');
+    if (window.electronAPI?.setPetDragging) {
+      window.electronAPI.setPetDragging(false);
+    }
+  }
+});
+
 // 拖动逻辑
 petBody.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
@@ -157,6 +169,11 @@ petBody.addEventListener('mousedown', (e) => {
   dragPendingDy = 0;
   petBody.classList.add('dragging');
   setPetCursor(CURSOR_GRABBING); // 拖动期间锁定光标，避免与 hover 判定交替
+  // 通知主进程进入"手动拖动"状态：这期间必须完全停止自动吸附，
+  // 否则松手前的每一帧都会被拉回吸附位置（表现为吸附后拖不动、会弹回）
+  if (window.electronAPI?.setPetDragging) {
+    window.electronAPI.setPetDragging(true);
+  }
 });
 
 document.addEventListener('mousemove', (e) => {
@@ -201,7 +218,11 @@ document.addEventListener('mouseup', (e) => {
     // 先把最后一帧尚未提交的位移发出去，避免松手瞬间「少走一截」
     flushDragMove();
     wasSnapped = false; // 拖动过，离开时不弹回贴边
+    // 结束手动拖动状态，随后 saveWindowPosition 会按新位置重新评估吸附
     window.electronAPI.saveWindowPosition();
+  } else if (window.electronAPI?.setPetDragging) {
+    // 只是点击（没移动）：同样要解除拖动抑制
+    window.electronAPI.setPetDragging(false);
   }
 
   // 没有移动 => 单击或双击

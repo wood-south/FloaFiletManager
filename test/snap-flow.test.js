@@ -63,6 +63,8 @@ function createSim({ panel = { x: 400, y: 900, width: 1000, height: 64 }, float 
     relation: null,
     anchor: null,
     visualGap: 0,
+    // 与生产代码 src/main/ipc/window.js 的 SNAP_DISTANCE 保持一致
+    snapDistance: 26,
     // 已上报过锚点
     // 忠实映射生产代码：report-pet-anchor 里「有则 maintain、无则 search」
     reportAnchor(anchor = ANCHOR) {
@@ -93,7 +95,8 @@ function createSim({ panel = { x: 400, y: 900, width: 1000, height: 64 }, float 
         panelBounds: this.panel,
         relation: this.relation,
         mode: this.mode || 'maintain',
-        visualGap: this.visualGap
+        visualGap: this.visualGap,
+        snapDistance: this.snapDistance
       });
       if (d.action === 'snap') {
         this.float.x = d.x;
@@ -282,6 +285,55 @@ ok('同一 side 下两处计算结果相同', () => {
     assert.strictEqual(b.x, a.x, side + ' x 不一致');
     assert.strictEqual(b.y, a.y, side + ' y 不一致');
   });
+});
+
+console.log('\n[10] 拖动抑制：手动拖动期间不得回吸（修复「吸附后拖不动、会弹回」）');
+/** 带拖动抑制的模拟：对应主进程的 petDragging 标记 */
+function createSimWithDrag(simOpts) {
+  const sim = createSim(simOpts);
+  sim.dragging = false;
+  const baseEvaluate = sim._evaluate.bind(sim);
+  sim._evaluate = (mode) => {
+    if (sim.dragging) return { action: 'none' };
+    return baseEvaluate(mode);
+  };
+  sim.beginDrag = () => { sim.dragging = true; sim.relation = null; };
+  sim.dragTo = (dx, dy) => { sim.float.x += dx; sim.float.y += dy; };
+  sim.endDrag = () => { sim.dragging = false; sim._evaluate('search'); };
+  return sim;
+}
+ok('拖动期间不吸附（即使仍在阈值内）', () => {
+  const sim = createSimWithDrag({ float: floatFor('top') });
+  sim.reportAnchor();
+  assert.ok(sim.relation, '初始未吸附');
+  sim.beginDrag();
+  // 只拖开 10px（旧实现会被 60px 阈值重新吸回）
+  sim.dragTo(0, 10);
+  const afterDragFloat = { x: sim.float.x, y: sim.float.y };
+  // 拖动中即使触发评估也不应移动
+  sim._evaluate('maintain');
+  assert.deepStrictEqual({ x: sim.float.x, y: sim.float.y }, afterDragFloat,
+    '拖动期间被自动吸附拉回');
+});
+ok('拖开超过阈值后松手不回吸', () => {
+  const sim = createSimWithDrag({ float: floatFor('top') });
+  sim.reportAnchor();
+  sim.beginDrag();
+  // 吸附后视觉下沿正好在 panel.y；向下拖 40px 会越过面板（间隙变负），
+  // 因此向**远离面板**的方向拖：向上拖 40px，使间隙变为 +40 > SNAP_DISTANCE(26)
+  sim.dragTo(0, -40);
+  sim.endDrag();
+  assert.strictEqual(sim.relation, null, '松手后仍被吸回');
+  assert.ok(sim.gapTo('top') > 26, '间隙未超过阈值，测试前提不成立');
+});
+ok('拖开很小距离后松手仍会吸附（贴得够近才吸）', () => {
+  const sim = createSimWithDrag({ float: floatFor('top') });
+  sim.reportAnchor();
+  sim.beginDrag();
+  sim.dragTo(0, 8);    // 仅拖离 8px，仍在 26px 内
+  sim.endDrag();
+  assert.ok(sim.relation, '近距离松手应重新吸附');
+  assert.strictEqual(sim.gapTo('top'), 0);
 });
 
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
