@@ -204,13 +204,17 @@ console.log('\n[6] 真实 demo-cat（端到端：计划能覆盖 32 帧）');
     const skin = info.skin;
     skin.render.atlas.dataUrl = 'data:image/png;base64,AA'; // 计划阶段不真的解码
     const plan = ui.buildPreviewPlan(skin, behavior.STATES, 1400);
-    ok('真实皮肤的预览计划覆盖全部 32 帧', () => {
+    ok('真实皮肤的预览计划覆盖全部 48 帧', () => {
       const used = new Set(plan.timeline.map((t) => t.frame));
-      assert.strictEqual(used.size, 32, '只覆盖 ' + used.size + ' 帧');
+      assert.strictEqual(used.size, 48, '只覆盖 ' + used.size + ' 帧');
     });
-    ok('真实皮肤覆盖七个动作', () => {
+    ok('真实皮肤覆盖 7 个基础动作 + 10 个方向变体 = 17 组', () => {
+      // 阶段 8.7 起示例皮肤带方向变体；预览把它们也播一遍，
+      // 正好让皮肤作者一眼看到每个方向都画对了
       const states = new Set(plan.timeline.map((t) => t.state));
-      assert.strictEqual(states.size, 7, '只覆盖 ' + states.size + ' 个动作');
+      assert.strictEqual(states.size, 17, '只覆盖 ' + states.size + ' 组');
+      ['idle', 'drag', 'walk', 'snap', 'drag-left', 'walk-right', 'snap-up']
+        .forEach((n) => assert.ok(states.has(n), '预览缺少 ' + n));
     });
   }
 }

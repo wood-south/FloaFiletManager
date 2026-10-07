@@ -17,6 +17,7 @@ const doc = fs.readFileSync(path.join(root, 'docs', 'PET_ANIMATION_SPEC.md'), 'u
 const skin = require(path.join(root, 'renderer', 'pet', 'skin.js'));
 const frames = require(path.join(root, 'renderer', 'pet', 'frames.js'));
 const behavior = require(path.join(root, 'renderer', 'pet', 'behavior.js'));
+const wanderApi = require(path.join(root, 'renderer', 'pet', 'wander.js'));
 const colors = require(path.join(root, 'renderer', 'pet', 'colors.js'));
 const store = require(path.join(root, 'src', 'main', 'services', 'skin-store.js'));
 
@@ -237,6 +238,71 @@ console.log('\n[7] 文档结构与必备章节');
   });
   ok('列出了已知限制（sounds 未播放等）', () => {
     assert.ok(/音效未播放|sounds.*只做校验/.test(doc), '未说明音效未播放');
+  });
+}
+
+console.log('\n[8] 方向变体（阶段 8.7）');
+{
+  const dirApi = require(path.join(root, 'renderer', 'pet', 'direction.js'));
+
+  ok('文档列出了方向变体这一节', () => {
+    assert.ok(/### 6\.2 方向变体/.test(doc), '缺少 §6.2 方向变体');
+  });
+  ok('文档声明的方向后缀与 direction.js 一致', () => {
+    // 文档里出现的后缀都要能被 direction.js 识别
+    ['-up', '-down', '-left', '-right'].forEach((sfx) => {
+      assert.ok(doc.includes(sfx), '文档未提到后缀 ' + sfx);
+      assert.ok(dirApi.normalizeDirection(sfx.slice(1)) !== null,
+        'direction.js 不认后缀 ' + sfx);
+    });
+  });
+  ok('文档说明 top/bottom 与 up/down 等价（且实现确实如此）', () => {
+    assert.ok(/top.*bottom.*等价|top.*与.*up/.test(doc), '文档未说明别名');
+    assert.strictEqual(dirApi.normalizeDirection('top'), 'up');
+    assert.strictEqual(dirApi.normalizeDirection('bottom'), 'down');
+  });
+  ok('文档明确「七个状态没有变」（方向不是新状态）', () => {
+    assert.ok(/七个状态没有变/.test(doc), '文档未澄清状态数不变');
+    // 实现侧确认：状态表仍是 7 个
+    assert.strictEqual(Object.keys(behavior.STATES).length, 7);
+  });
+  ok('文档写明回退链（变体 → 基础 clip → 静帧）', () => {
+    assert.ok(/回退链/.test(doc), '未写回退链');
+    const clips = { drag: { frames: [1] } };
+    assert.strictEqual(dirApi.pickClipName(clips, 'drag', 'left'), 'drag', '实现未回退');
+    assert.strictEqual(dirApi.pickClipName({}, 'drag', 'left'), null, '应回落到静帧');
+  });
+  ok('文档写明方向来源（拖拽主轴 / 行走方向 / 吸附边）', () => {
+    ['拖动位移', '行走方向', '吸附到哪条边'].forEach((kw) => {
+      assert.ok(doc.includes(kw), '文档未写明方向来源: ' + kw);
+    });
+  });
+  ok('文档写明吸附时沿边框走动、撞边界自动反向', () => {
+    assert.ok(/沿那条边/.test(doc), '未说明沿边框走动');
+    assert.ok(/自动反向/.test(doc), '未说明撞边界反向');
+    // 与实现一致
+    assert.strictEqual(wanderApi.axisFor('left').axis, 'y', '贴左右边应竖直走');
+    assert.strictEqual(wanderApi.axisFor('top').axis, 'x', '贴上下边应水平走');
+  });
+  ok('文档写明 walk 会真的移动窗口（不只是原地播帧）', () => {
+    assert.ok(/真的移动窗口|会真的移动窗口/.test(doc), '未说明 walk 会移动窗口');
+  });
+  ok('文档写明待机与睡觉是随机循环', () => {
+    assert.ok(/随机循环/.test(doc), '未说明睡眠随机循环');
+  });
+  ok('文档提醒倾斜姿态会变宽、需控制角度或缩小', () => {
+    assert.ok(/倾斜的姿态会变宽|倾斜.*变宽/.test(doc), '未提醒倾斜会溢出');
+  });
+  ok('文档提醒方向后缀拼错会静默回落（不报错）', () => {
+    assert.ok(/拼错不会报错/.test(doc), '未提醒拼写风险');
+  });
+  ok('示例皮肤真的带方向变体（文档所述可被验证）', () => {
+    const skinDir = path.join(root, 'renderer', 'pet', 'skins', 'demo-cat');
+    if (!fs.existsSync(skinDir)) return;   // 没有示例皮肤时跳过
+    const raw = JSON.parse(fs.readFileSync(path.join(skinDir, 'pet.json'), 'utf8'));
+    ['drag-up', 'drag-down', 'drag-left', 'drag-right',
+      'walk-left', 'walk-right', 'snap-up', 'snap-down', 'snap-left', 'snap-right']
+      .forEach((n) => assert.ok(raw.clips[n], '示例皮肤缺少 ' + n));
   });
 }
 

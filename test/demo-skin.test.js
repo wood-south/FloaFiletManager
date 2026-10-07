@@ -91,10 +91,23 @@ console.log('\n[3] 帧号与图集容量');
   const rows = Math.floor(h / a.frameHeight);
   const capacity = cols * rows;
 
-  ok('图集容量与文件名描述一致（8×4=32）', () => {
+  ok('图集容量与文件名描述一致（8×6=48）', () => {
+    // 阶段 8.7：由 8×4=32 扩到 8×6=48，容纳方向变体帧
     assert.strictEqual(cols, 8);
-    assert.strictEqual(rows, 4);
-    assert.strictEqual(capacity, 32);
+    assert.strictEqual(rows, 6);
+    assert.strictEqual(capacity, 48);
+  });
+  ok('方向变体帧都落在图集内且被声明', () => {
+    const clips = info.skin.clips;
+    ['drag-up', 'drag-down', 'drag-left', 'drag-right',
+      'walk-left', 'walk-right', 'snap-up', 'snap-down', 'snap-left', 'snap-right']
+      .forEach((name) => {
+        assert.ok(clips[name], '示例皮肤缺少方向变体: ' + name);
+        assert.ok(clips[name].frames.length > 0, name + ' 帧序列为空');
+        clips[name].frames.forEach((f) => {
+          assert.ok(f >= 0 && f < capacity, name + ' 帧号越界: ' + f);
+        });
+      });
   });
   ok('所有 clips 的帧号都在容量内（越界不会报错，只会画出空白）', () => {
     const bad = [];

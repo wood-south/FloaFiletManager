@@ -45,6 +45,29 @@
   /** 合法状态名集合；优先用调用方显式传入的列表（主进程用它替代状态表），
       其次读状态表模块（Node 下 require、浏览器下读全局），最后用内置清单兜底 */
   const FALLBACK_STATES = ['idle', 'sleep', 'walk', 'celebrate', 'interact', 'snap', 'drag'];
+
+  /* 方向后缀（阶段 8.7）：`drag-up`、`walk-left` 这类是**状态的方向变体**，
+     不是独立状态，必须被接受 —— 否则皮肤作者画的四向拖拽会被整片忽略，
+     反而报一堆"未知状态名"。归一化规则与 renderer/pet/direction.js 一致
+     （top/bottom 与 up/down 等价）。 */
+  const DIRECTION_SUFFIXES = ['-up', '-down', '-left', '-right', '-top', '-bottom'];
+
+  /** 把 `drag-up` 拆成 { state:'drag', dir:'up' }；不带方向时 dir 为 null */
+  function splitVariant(name) {
+    for (const sfx of DIRECTION_SUFFIXES) {
+      if (name.length > sfx.length && name.endsWith(sfx)) {
+        return { state: name.slice(0, -sfx.length), dir: sfx.slice(1) };
+      }
+    }
+    return { state: name, dir: null };
+  }
+
+  /** 名字是否是「合法状态」或「合法状态的方向变体」 */
+  function isKnownClipName(name, states) {
+    if (states.includes(name)) return true;
+    const v = splitVariant(name);
+    return v.dir !== null && states.includes(v.state);
+  }
   function knownStates(override) {
     if (Array.isArray(override) && override.length > 0) return override;
     // Node：状态表与本校验器在同一目录，直接 require，避免依赖全局副作用顺序
@@ -179,7 +202,7 @@
       warnings.push('clips 不是对象，已忽略全部动作覆盖');
     } else if (isPlainObject(raw.clips)) {
       for (const [name, clip] of Object.entries(raw.clips)) {
-        if (!states.includes(name)) {
+        if (!isKnownClipName(name, states)) {
           warnings.push('未知状态名，已忽略: ' + name);
           continue;
         }
@@ -208,7 +231,7 @@
       warnings.push('sounds 不是对象，已忽略');
     } else if (isPlainObject(raw.sounds)) {
       for (const [name, file] of Object.entries(raw.sounds)) {
-        if (!states.includes(name)) {
+        if (!isKnownClipName(name, states)) {
           warnings.push('sounds 含未知状态名，已忽略: ' + name);
           continue;
         }

@@ -565,12 +565,18 @@ window.electronAPI.onDockSnapChanged((side) => {
  */
 function syncSnapState() {
   if (!petBody || typeof behavior === 'undefined') return;
-  const snapped = hasSnapClass() ||
-    petBody.classList.contains('dock-top') ||
-    petBody.classList.contains('dock-bottom') ||
-    petBody.classList.contains('dock-left') ||
-    petBody.classList.contains('dock-right');
+  const orientation = currentOrientation();
+  const snapped = orientation !== null;
   if (snapped) {
+    /* 贴哪条边就用哪个方向的动画：snap-left/right 表示贴在左右边，
+       snap-up/down 表示贴在上下边（top→up、bottom→down 由方向模块归一化）。
+       皮肤没画方向变体时会自动回退到基础 snap。 */
+    if (skinRenderer && orientation) {
+      const dir = orientation.indexOf('dock-') === 0
+        ? orientation.slice(5)   // dock-left → left
+        : orientation;
+      skinRenderer.setDirection('snap', dir);
+    }
     behavior.set('snap');
     return;
   }

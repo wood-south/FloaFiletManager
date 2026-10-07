@@ -176,6 +176,92 @@ for (let i = 0; i < 3; i++) {
   });
 }
 
+/* ---------- 32~47 方向变体（阶段 8.7） ----------
+   命名规则见 docs/PET_ANIMATION_SPEC.md：状态名 + '-' + 方向。
+   缺哪个方向就回退到不带方向的同名 clip，所以这里多画几组只为效果更好。 */
+
+// 32~39 四向拖拽：向上被拎（腿收）、向下垂（腿伸）、左右（整体倾斜）
+// 倾斜角不超过 ±10°：再大阴影会被旋转到帧外（实测 tilt 14 时 y 到 93、
+// tilt 90 时直接顶到 95 贴边）
+const DRAG_DIRS = [
+  { dir: 'up', lean: 0, legs: [-0.55, -0.5, -0.6, -0.55], tail: 10 },
+  { dir: 'down', lean: 0, legs: [0.3, 0.26, 0.34, 0.3], tail: 4 },
+  { dir: 'left', lean: -9, legs: [-0.3, -0.25, -0.35, -0.3], tail: 6 },
+  { dir: 'right', lean: 9, legs: [-0.3, -0.25, -0.35, -0.3], tail: 6 }
+];
+DRAG_DIRS.forEach((d) => {
+  for (let i = 0; i < 2; i++) {
+    FRAMES.push({
+      name: 'drag-' + d.dir + '-' + i,
+      p: {
+        bodyY: 58,
+        bodyRy: 18,
+        headY: -23,
+        earTilt: d.dir === 'up' ? -8 : d.dir === 'down' ? 4 : -5,
+        // 横向拖拽时瞳孔朝拖动方向看
+        pupilX: d.dir === 'left' ? -1.4 : d.dir === 'right' ? 1.4 : 0,
+        eyeOpen: 1,
+        mouthOpen: d.dir === 'up' ? 0.8 : 0.4,
+        legPhase: d.legs,
+        tilt: d.lean + (i === 1 ? 2 : 0),
+        tailPts: tailPts(0, d.tail + i * 2)
+      }
+    });
+  }
+});
+
+// 40~43 走路方向：左右各两帧（身体朝向/腿序镜像）
+['left', 'right'].forEach((dir, di) => {
+  for (let i = 0; i < 2; i++) {
+    const bob = i === 0 ? 0 : -1.4;
+    // 向左走时用右腿在前，向右走时相反（镜像腿序）
+    const legs = di === 0
+      ? [[0.9, 0, 0.4, 0], [0, 0.9, 0, 0.4]][i]
+      : [[0, 0.9, 0, 0.4], [0.9, 0, 0.4, 0]][i];
+    FRAMES.push({
+      name: 'walk-' + dir + '-' + i,
+      p: {
+        bodyY: 60 + bob,
+        bodyRy: 16.5,
+        headY: -22 + bob * 0.5,
+        headX: di === 0 ? -2 : 2,          // 头朝行进方向偏
+        legPhase: legs,
+        earTilt: di === 0 ? -2 : 2,
+        pupilX: di === 0 ? -1.2 : 1.2,
+        tilt: di === 0 ? -3 : 3,
+        tailPts: tailPts(bob, di === 0 ? 5 : 9)
+      }
+    });
+  }
+});
+
+/* 44~47 贴边四向：侧挂用「倾斜 + 缩小」而不是纯倾斜。
+   猫本身偏宽（x 约 26~90），绕中心一转就会顶出 96 宽的帧
+   （实测 -36° 时已经到了 x=0），所以侧挂同时缩到 0.72 并转 ±52°。
+   贴上边用 120°（不是 150/180）：阴影画在未变换的画布上，角度一大
+   就会被转到 y=95 贴死底边 —— 实测 150° 与 180° 都溢出，120° 才安全。 */
+const SNAP_DIRS = [
+  { dir: 'up', lean: 120, scale: 0.78 },   // 贴上边：翻过去挂着
+  { dir: 'down', lean: 0, scale: 1 },      // 贴下边：正常站
+  { dir: 'left', lean: -52, scale: 0.72 }, // 贴左边：侧挂
+  { dir: 'right', lean: 52, scale: 0.72 }  // 贴右边：侧挂
+];
+SNAP_DIRS.forEach((d) => {
+  FRAMES.push({
+    name: 'snap-' + d.dir,
+    p: {
+      bodyY: 60,
+      headX: 0,
+      earTilt: 0,
+      eyeOpen: 0.55,        // 贴边时眯眼
+      blush: 1,
+      tilt: d.lean,
+      poseScale: d.scale,
+      tailPts: tailPts(0, 5)
+    }
+  });
+});
+
 /* ---------- 渲染并拼图集 ---------- */
 
 const ATLAS_W = FW * COLS;
@@ -234,7 +320,20 @@ const petJson = {
     interact: { frames: [16, 17, 18, 19], fps: 12 },
     celebrate: { frames: [20, 21, 22, 23, 24, 25], fps: 10 },
     snap: { frames: [26, 27, 28], fps: 5 },
-    drag: { frames: [29, 30, 31], fps: 7 }
+    drag: { frames: [29, 30, 31], fps: 7 },
+
+    /* 方向变体（阶段 8.7）：状态名-方向。
+       引擎会优先取变体，取不到就回退到上面不带方向的那条。 */
+    'drag-up': { frames: [32, 33], fps: 7 },
+    'drag-down': { frames: [34, 35], fps: 7 },
+    'drag-left': { frames: [36, 37], fps: 7 },
+    'drag-right': { frames: [38, 39], fps: 7 },
+    'walk-left': { frames: [40, 41], fps: 9 },
+    'walk-right': { frames: [42, 43], fps: 9 },
+    'snap-up': { frames: [44], fps: 5 },
+    'snap-down': { frames: [45], fps: 5 },
+    'snap-left': { frames: [46], fps: 5 },
+    'snap-right': { frames: [47], fps: 5 }
   }
 };
 fs.writeFileSync(path.join(outDir, 'pet.json'), JSON.stringify(petJson, null, 2) + '\n');

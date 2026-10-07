@@ -23,7 +23,7 @@ const path = require('path');
 const FW = 96;              // 帧宽
 const FH = 96;              // 帧高
 const COLS = 8;             // 图集列数
-const ROWS = 4;             // 图集行数
+const ROWS = 6;             // 图集行数（阶段 8.7 由 4 扩到 6，容 48 帧）
 const SS = 3;               // 超采样倍数（抗锯齿）
 
 /* ---------------- PNG 编码 ---------------- */
@@ -187,6 +187,40 @@ function tail(cv, color, pts, w) {
 }
 
 /**
+ * 返回一个「绕中心旋转 + 缩放」的画布视图：把传入的坐标先反向旋转/缩放回
+ * 原始空间，再交给原画布。这样所有既有图元都能整体倾斜与缩放，不必逐个改公式。
+ *
+ * 用途：横向被拎起 / 贴在侧边时的姿态 —— 身体要整体倾斜，
+ * 而猫本身偏宽（x 约 26~90），纯倾斜会直接顶出帧外，必须同时缩小。
+ *
+ * @param {object} cv 原画布
+ * @param {number} deg 旋转角度（度，正=顺时针）
+ * @param {number} cx/cy 旋转中心
+ * @param {number} [scale] 缩放倍数（<1 缩小）
+ */
+function rotatedView(cv, deg, cx, cy, scale) {
+  const s = (typeof scale === 'number' && scale > 0) ? scale : 1;
+  if (!deg && s === 1) return cv;
+  const rad = (deg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    w: cv.w,
+    h: cv.h,
+    fill(sdf, color, alpha) {
+      // 目标点 (x,y) → 反向缩放再反向旋转到原始空间 (sx,sy)
+      cv.fill((x, y) => {
+        const dx = (x - cx) / s;
+        const dy = (y - cy) / s;
+        const sx = cx + dx * cos + dy * sin;
+        const sy = cy - dx * sin + dy * cos;
+        return sdf(sx, sy);
+      }, color, alpha);
+    }
+  };
+}
+
+/**
  * 画猫。参数都用显式命名，便于逐帧微调。
  * @param {object} p 关节参数
  */
@@ -205,15 +239,23 @@ function drawCat(cv, p) {
     tailPts: null,
     squash: 1,        // 纵向压缩（跳跃/落地）
     blush: 1,         // 腮红
-    mouthOpen: 0      // 张嘴程度
+    mouthOpen: 0,     // 张嘴程度
+    tilt: 0,          // 整体倾斜角度（度，正=顺时针）；用于横向被拎起的姿态
+    poseScale: 1      // 姿态整体缩放（贴在侧边时需要缩小，否则倾斜会顶出帧外）
   }, p || {});
+
+  // 整体倾斜 + 缩放：后面所有图元都画在这个（可能旋转/缩小的）视图上
+  const base = cv;
+  cv = rotatedView(base, o.tilt, 48, 60, o.poseScale);
 
   const cx = 48 + o.headX;
   const by = o.bodyY;
   const hy = by + o.headY;
 
-  // 落地阴影（固定在地面）
-  cv.fill((x, y) => sdEllipse(x, y, 48, 86, 20 * o.squash, 4.2), [0, 0, 0], 0.16);
+  // 落地阴影（固定在地面；不随身体倾斜，否则会跟着转）
+  // 注意：用 base 而不是 cv —— 阴影属于"地面"，不该被姿态倾斜带走。
+  // y 由 86 提到 82：给「拖拽时 bodyY 抬高 + 整体倾斜」留出帧内余量。
+  base.fill((x, y) => sdEllipse(x, y, 48, 82, 20 * o.squash, 4.2), [0, 0, 0], 0.16);
 
   // ---- 尾巴（在身体后面，先画） ----
   // 起点要落在身体轮廓内，由身体盖住根部，否则会看起来像一条抬起的手臂
@@ -225,10 +267,15 @@ function drawCat(cv, p) {
   // ---- 后腿 ----
   const lp = o.legPhase || [0, 0, 0, 0];
   const backHipY = by + 8;
+  /* 脚下沿与阴影都留出余量（阶段 8.7）：
+     原先脚尖到 82/83、阴影在 86，而拖拽姿态用 bodyY=58，
+     阴影底沿会到 y≈95，几乎贴死帧边（96 高）。
+     阴影与脚尖高度是**固定值**（不随 bodyY 移动），
+     所以抬高 bodyY 时阴影会浮起来 —— 余量必须在这里留。 */
   leg(cv, C.furDark,
-    40, backHipY, 39, backHipY + 10 - lp[0] * 7, 40, 82 - lp[0] * 12, 4.6);
+    40, backHipY, 39, backHipY + 10 - lp[0] * 7, 40, 79 - lp[0] * 12, 4.6);
   leg(cv, C.furDark,
-    56, backHipY, 57, backHipY + 10 - lp[1] * 7, 56, 82 - lp[1] * 12, 4.6);
+    56, backHipY, 57, backHipY + 10 - lp[1] * 7, 56, 79 - lp[1] * 12, 4.6);
 
   // ---- 身体 ----
   const bodyCy = by;
@@ -239,9 +286,9 @@ function drawCat(cv, p) {
   // ---- 前腿（在身体前面） ----
   const frontHipY = by + 6;
   leg(cv, C.fur,
-    42, frontHipY, 41, frontHipY + 11 - lp[2] * 7, 42, 83 - lp[2] * 13, 4.9);
+    42, frontHipY, 41, frontHipY + 11 - lp[2] * 7, 42, 80 - lp[2] * 13, 4.9);
   leg(cv, C.fur,
-    54, frontHipY, 55, frontHipY + 11 - lp[3] * 7, 54, 83 - lp[3] * 13, 4.9);
+    54, frontHipY, 55, frontHipY + 11 - lp[3] * 7, 54, 80 - lp[3] * 13, 4.9);
 
   // ---- 头（含耳朵，整体可压缩） ----
   const hR = o.headR;
@@ -318,6 +365,6 @@ function drawCat(cv, p) {
 
 module.exports = {
   FW, FH, COLS, ROWS, SS,
-  C, createCanvas, encodePng, drawCat, leg, tail,
+  C, createCanvas, encodePng, drawCat, leg, tail, rotatedView,
   sdEllipse, sdEllipseRing, sdPolygon, sdCapsule
 };

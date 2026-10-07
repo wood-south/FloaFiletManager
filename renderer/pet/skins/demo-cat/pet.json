@@ -83,6 +83,72 @@
         31
       ],
       "fps": 7
+    },
+    "drag-up": {
+      "frames": [
+        32,
+        33
+      ],
+      "fps": 7
+    },
+    "drag-down": {
+      "frames": [
+        34,
+        35
+      ],
+      "fps": 7
+    },
+    "drag-left": {
+      "frames": [
+        36,
+        37
+      ],
+      "fps": 7
+    },
+    "drag-right": {
+      "frames": [
+        38,
+        39
+      ],
+      "fps": 7
+    },
+    "walk-left": {
+      "frames": [
+        40,
+        41
+      ],
+      "fps": 9
+    },
+    "walk-right": {
+      "frames": [
+        42,
+        43
+      ],
+      "fps": 9
+    },
+    "snap-up": {
+      "frames": [
+        44
+      ],
+      "fps": 5
+    },
+    "snap-down": {
+      "frames": [
+        45
+      ],
+      "fps": 5
+    },
+    "snap-left": {
+      "frames": [
+        46
+      ],
+      "fps": 5
+    },
+    "snap-right": {
+      "frames": [
+        47
+      ],
+      "fps": 5
     }
   }
 }
