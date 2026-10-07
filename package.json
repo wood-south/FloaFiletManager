@@ -6,8 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "lint": "eslint main.js preload.js renderer/scripts/**/*.js",
-    "lint:fix": "eslint main.js preload.js renderer/scripts/**/*.js --fix",
+    "lint": "eslint main.js preload.js \"renderer/**/*.js\" \"src/main/**/*.js\"",
+    "lint:fix": "eslint main.js preload.js \"renderer/**/*.js\" \"src/main/**/*.js\" --fix",
     "format": "prettier --write \"**/*.js\" \"**/*.json\" \"**/*.html\" \"**/*.css\"",
     "build": "electron-builder --win",
     "build:portable": "electron-builder --win portable",
@@ -43,6 +43,7 @@
       "mirror": "https://npmmirror.com/mirrors/electron/"
     },
     "win": {
+      "icon": "icon.png",
       "target": [
         {
           "target": "portable",

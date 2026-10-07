@@ -8,14 +8,95 @@
 </head>
 <body>
   <div class="dock-container" id="dockContainer">
+    <!-- 音量浮层 -->
+    <div class="dock-popup volume-popup" id="volumePopup" hidden>
+      <div class="popup-volume-row">
+        <button class="popup-mute-btn" id="popupMuteBtn" title="静音">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+        </button>
+        <div class="popup-volume-slider-wrap">
+          <input type="range" min="0" max="100" value="50" class="popup-volume-slider" id="popupVolumeSlider">
+          <span class="popup-volume-value" id="popupVolumeValue">50</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 网络浮层（有线+无线） -->
+    <div class="dock-popup wifi-popup" id="wifiPopup" hidden>
+      <div class="wifi-header">
+        <span class="wifi-title">网络</span>
+        <button class="wifi-refresh-btn" id="wifiRefreshBtn" title="刷新">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+        </button>
+      </div>
+      <!-- 有线连接状态 -->
+      <div class="wifi-status wired-status" id="wiredStatus" hidden>
+        <div class="wifi-status-row wired">
+          <div class="wifi-status-icon wired-icon" id="wiredStatusIcon"></div>
+          <div class="wifi-status-info">
+            <div class="wifi-status-ssid" id="wiredStatusName">以太网</div>
+            <div class="wifi-status-signal" id="wiredStatusIp"></div>
+          </div>
+        </div>
+      </div>
+      <div class="wifi-divider" id="wiredDivider" hidden></div>
+      <!-- 无线连接状态 -->
+      <div class="wifi-status" id="wifiStatus">
+        <div class="wifi-status-row">
+          <div class="wifi-status-icon" id="wifiStatusIcon"></div>
+          <div class="wifi-status-info">
+            <div class="wifi-status-ssid" id="wifiStatusSsid">未连接</div>
+            <div class="wifi-status-signal" id="wifiStatusSignal"></div>
+          </div>
+          <button class="wifi-disconnect-btn" id="wifiDisconnectBtn" hidden>断开</button>
+        </div>
+      </div>
+      <div class="wifi-divider"></div>
+      <div class="wifi-list" id="wifiList">
+        <div class="wifi-empty">点击右上角刷新按钮扫描网络</div>
+      </div>
+    </div>
+
     <div class="dock-panel" id="dockPanel">
+      <!-- 玻璃效果由 ::before 伪元素提供，独立模糊层与图标完全分离 -->
+      <!-- 开关机按钮 -->
+      <div class="dock-power" data-nav-action="power" title="关机/重启">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+          <line x1="12" y1="2" x2="12" y2="12"></line>
+        </svg>
+      </div>
+      <!-- 开始按钮 -->
       <div class="dock-start" data-nav-action="start" title="开始">
-        <svg viewBox="0 0 24 24" fill="#0078d4">
-          <path d="M0 0h12v12H0z"/><path d="M12 0h12v12H12z" fill="#107c10"/><path d="M0 12h12v12H0z" fill="#ffb900"/><path d="M12 12h12v12H12z" fill="#e81123"/>
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="9" height="9" rx="1" fill="#0078D4"/>
+          <rect x="13" y="2" width="9" height="9" rx="1" fill="#107C10"/>
+          <rect x="2" y="13" width="9" height="9" rx="1" fill="#FFB900"/>
+          <rect x="13" y="13" width="9" height="9" rx="1" fill="#E81123"/>
         </svg>
       </div>
       <div class="dock-separator"></div>
-      <div class="dock-items" id="dockItems"></div>
+      <div class="dock-items-wrapper" id="dockItemsWrapper">
+        <button class="dock-scroll-btn left" id="scrollLeft" title="向左滚动">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <div class="dock-items" id="dockItems">
+          <div class="dock-items-inner" id="dockItemsInner"></div>
+        </div>
+        <button class="dock-scroll-btn right" id="scrollRight" title="向右滚动">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
       <div class="dock-separator"></div>
       <div class="dock-tray">
         <div class="dock-tray-item" data-nav-action="wifi" title="网络">
@@ -28,10 +109,11 @@
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
           </svg>
         </div>
-        <div class="dock-tray-item" data-nav-action="battery" title="电源">
+        <div class="dock-tray-item" data-nav-action="battery" id="dockBattery" title="电源">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect><line x1="22" y1="11" x2="22" y2="13"></line>
           </svg>
+          <span class="tray-text" id="batteryText"></span>
         </div>
         <div class="dock-tray-item" id="dockTime" title="时间"></div>
         <div class="dock-tray-item dock-settings-btn" id="dockSettings" title="设置">
@@ -46,62 +128,6 @@
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="dock-settings-panel" id="dockSettingsPanel">
-    <div class="settings-header">
-      <h3>Dock 设置</h3>
-      <button class="settings-close" id="settingsClose">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </div>
-    <div class="settings-content">
-      <div class="settings-section">
-        <div class="settings-title">常规</div>
-        <label class="settings-item">
-          <input type="checkbox" id="settingAlwaysOnTop">
-          <span>始终置顶</span>
-        </label>
-        <label class="settings-item">
-          <input type="checkbox" id="settingHideSystemTaskbar">
-          <span>隐藏系统任务栏</span>
-        </label>
-      </div>
-      <div class="settings-section">
-        <div class="settings-title">外观</div>
-        <div class="settings-slider-item">
-          <div class="slider-label">
-            <span>背景透明度</span>
-            <span id="opacityValue">72%</span>
-          </div>
-          <input type="range" class="settings-slider" id="settingOpacity" min="10" max="100" value="72">
-        </div>
-        <div class="settings-slider-item">
-          <div class="slider-label">
-            <span>模糊强度</span>
-            <span id="blurValue">30px</span>
-          </div>
-          <input type="range" class="settings-slider" id="settingBlur" min="0" max="60" value="30">
-        </div>
-      </div>
-      <div class="settings-section">
-        <div class="settings-title">图标管理</div>
-        <div class="settings-item">
-          <button class="settings-btn" id="btnResetIcons">重置默认图标</button>
-        </div>
-        <div class="settings-item">
-          <button class="settings-btn" id="btnShowHidden">显示隐藏的图标</button>
-        </div>
-      </div>
-      <div class="settings-section">
-        <div class="settings-title">关于</div>
-        <div class="settings-info">版本 1.0.0</div>
-        <div class="settings-info">浮窗文件管理器</div>
       </div>
     </div>
   </div>

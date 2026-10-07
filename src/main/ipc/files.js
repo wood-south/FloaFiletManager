@@ -60,12 +60,8 @@ function register({ loadConfig, getFileManagerWindow }) {
         return { success: false, duplicate: true, destPath };
       }
 
-      let finalDestPath = destPath;
-      if (overwrite && fs.existsSync(destPath)) {
-        // 覆盖模式：直接覆盖原文件
-      } else if (overwrite) {
-        // 覆盖模式但文件不存在，正常流程
-      }
+      const finalDestPath = destPath;
+      // overwrite 为 true 时由 copyFileSync/writeFileSync 直接覆盖，无需额外处理
 
       // 对于快捷方式(.lnk)等特殊文件，用 Buffer 复制避免 EPERM
       const isLnk = fileName.toLowerCase().endsWith('.lnk');

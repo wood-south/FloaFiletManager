@@ -14,10 +14,6 @@ html, body {
   -webkit-app-region: no-drag;
 }
 
-.float-ball {
-  display: none;
-}
-
 /* ======== 桌宠主容器（定位 + 拖拽） ======== */
 .pet-body {
   position: absolute;
@@ -78,6 +74,12 @@ html, body {
 .pet-body.snap-right .pet-avatar { transform: rotate(-90deg); }
 .pet-body.snap-top .pet-avatar   { transform: rotate(180deg); }
 .pet-body.snap-bottom .pet-avatar{ transform: rotate(0deg); }
+
+/* Dock 吸附朝向：仅旋转宠物使其底部朝向 dock 边框，不改变宠物在窗口内的位置 */
+.pet-body.dock-top .pet-avatar    { transform: rotate(0deg); }
+.pet-body.dock-bottom .pet-avatar { transform: rotate(180deg); }
+.pet-body.dock-left .pet-avatar   { transform: rotate(-90deg); }
+.pet-body.dock-right .pet-avatar  { transform: rotate(90deg); }
 
 /* 菜单：关闭时淡出，展开时出现 */
 .menu-ring,

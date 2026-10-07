@@ -286,12 +286,6 @@ html, body {
   font-size: 12px;
 }
 
-.path-label {
-  color: #999;
-  flex-shrink: 0;
-  display: none;
-}
-
 .path-text {
   flex: 1;
   color: #666;
@@ -1066,4 +1060,13 @@ html, body {
 .ctx-item:hover {
   background: #eef2ff;
   color: #4f46e5;
+}
+
+.ctx-item.danger {
+  color: #ef4444;
+}
+
+.ctx-item.danger:hover {
+  background: #fef2f2;
+  color: #dc2626;
 }

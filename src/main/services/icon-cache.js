@@ -4,7 +4,6 @@ const { app } = require('electron');
 const { isDev, rootDir } = require('../config');
 
 const iconCache = new Map();
-let folderIconDataUrl = null;
 let iconCachePath = null;
 let iconCacheSaveTimeout = null;
 
@@ -68,4 +67,4 @@ function scheduleSaveIconCache() {
   iconCacheSaveTimeout = setTimeout(saveIconCache, 5000);
 }
 
-module.exports = { iconCache, folderIconDataUrl, loadIconCache, saveIconCache, scheduleSaveIconCache };
+module.exports = { iconCache, loadIconCache, saveIconCache, scheduleSaveIconCache };

@@ -6,9 +6,10 @@
   },
   "parserOptions": {
     "ecmaVersion": 2022,
-    "sourceType": "module"
+    "sourceType": "script"
   },
   "rules": {
+    "no-undef": "error",
     "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
     "no-console": "off",
     "no-constant-condition": "warn",

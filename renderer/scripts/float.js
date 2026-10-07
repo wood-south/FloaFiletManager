@@ -18,10 +18,25 @@ let quitOpen = false;
 let clickTimer = null;
 let wasSnapped = false;
 let snapLock = false;
-let snapTimer = null;
 let recycleMode = false;
+let modalActive = false; // 模态框打开时禁止点击穿透
+
+/* ========== 点击穿透：透明区域允许鼠标穿透到桌面 ========== */
+function enableMouseCapture() {
+  if (window.electronAPI?.setIgnoreMouseEvents) {
+    window.electronAPI.setIgnoreMouseEvents(false);
+  }
+}
+function enableClickThrough() {
+  if (window.electronAPI?.setIgnoreMouseEvents) {
+    window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+  }
+}
+// 初始化：窗口加载后启用点击穿透
+enableClickThrough();
 
 const MODAL_ICONS = {
+  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M8 12.5l2.5 2.5L16 9.5"></path></svg>',
   warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
   question: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
   error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
@@ -32,6 +47,9 @@ async function showModal({ type = 'question', title, message, buttons }) {
   if (window.electronAPI.expandFloatWindow) {
     await window.electronAPI.expandFloatWindow(420, 320);
   }
+
+  modalActive = true;
+  enableMouseCapture(); // 模态框打开期间关闭穿透，确保按钮可点击
 
   return new Promise((resolve) => {
     modalIcon.className = 'modal-icon ' + type;
@@ -46,10 +64,13 @@ async function showModal({ type = 'question', title, message, buttons }) {
       el.textContent = btn.text;
       el.onclick = () => {
         modalOverlay.classList.remove('active');
+        modalActive = false;
         // 关闭后恢复浮窗原尺寸
         if (window.electronAPI.restoreFloatWindow) {
           window.electronAPI.restoreFloatWindow();
         }
+        // 恢复穿透：仅当菜单/退出按钮也都关闭时
+        if (!menuOpen && !quitOpen) enableClickThrough();
         resolve(index);
       };
       modalButtons.appendChild(el);
@@ -74,6 +95,7 @@ function toggleMenu() {
   }
   closeQuit();
   menuOpen = true;
+  enableMouseCapture(); // 菜单打开：保持鼠标捕获
   menuRing.classList.add('open');
 }
 
@@ -81,6 +103,7 @@ function closeMenu() {
   if (!menuOpen) return;
   menuOpen = false;
   menuRing.classList.remove('open');
+  if (!quitOpen && !modalActive) enableClickThrough(); // 菜单关闭：恢复穿透
 }
 
 function toggleQuit() {
@@ -90,6 +113,7 @@ function toggleQuit() {
   }
   closeMenu();
   quitOpen = true;
+  enableMouseCapture(); // 退出按钮打开：保持鼠标捕获
   quitRing.classList.add('open');
 }
 
@@ -97,6 +121,7 @@ function closeQuit() {
   if (!quitOpen) return;
   quitOpen = false;
   quitRing.classList.remove('open');
+  if (!menuOpen && !modalActive) enableClickThrough(); // 退出按钮关闭：恢复穿透
 }
 
 // 检查是否处于贴边状态
@@ -109,6 +134,7 @@ function hasSnapClass() {
 
 // 贴边时鼠标悬停 → 弹出显示；离开 → 收回贴边
 petBody.addEventListener('mouseenter', () => {
+  enableMouseCapture(); // 进入内容区域：关闭穿透，捕获鼠标
   if (isDragging || snapLock) return;
   if (hasSnapClass()) {
     wasSnapped = true;
@@ -130,6 +156,8 @@ petBody.addEventListener('mouseleave', () => {
     });
   }
   wasSnapped = false;
+  // 离开内容区域：恢复穿透（菜单/退出按钮/模态框/拖动中不穿透，避免拖动断连）
+  if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 });
 
 // 拖动逻辑
@@ -200,8 +228,13 @@ menuRing.addEventListener('click', async (e) => {
 
   switch (action) {
     case 'nav':
-      closeMenu();
-      window.electronAPI.toggleDock();
+      // 不关闭菜单，切换 Dock 显示并更新按钮颜色
+      const dockVisible = await window.electronAPI.toggleDock();
+      const navBtn = menuRing.querySelector('[data-action="nav"]');
+      if (navBtn) {
+        navBtn.classList.toggle('active', dockVisible);
+      }
+      showToast(dockVisible ? 'Dock 已开启' : 'Dock 已关闭', 1500);
       break;
     case 'folder':
       closeMenu();
@@ -236,6 +269,12 @@ async function initPinState() {
   if (pinBtn) {
     const enabled = await window.electronAPI.getAlwaysOnTop();
     pinBtn.classList.toggle('active', enabled);
+  }
+  // 初始化 Dock 开关按钮状态
+  const navBtn = menuRing?.querySelector('[data-action="nav"]');
+  if (navBtn && window.electronAPI?.getDockVisible) {
+    const dockVisible = await window.electronAPI.getDockVisible();
+    navBtn.classList.toggle('active', dockVisible);
   }
 }
 initPinState();
@@ -320,7 +359,7 @@ document.addEventListener('drop', async (e) => {
   const types = Array.from(e.dataTransfer.types);
 
   // 收集文件路径：支持系统拖放(Files)和文件管理页拖放(text/plain)
-  let filePaths = [];
+  const filePaths = [];
   if (types.includes('Files') || types.includes('application/x-moz-file')) {
     const files = e.dataTransfer.files;
     for (const file of files) {
@@ -404,6 +443,14 @@ window.electronAPI.onSnapEdgeChanged((edges) => {
     for (const edge of edges) {
       petBody.classList.add('snap-' + edge);
     }
+  }
+});
+
+// Dock 吸附朝向：仅旋转宠物使其底部朝向 dock 边框（不改变窗口内位置）
+window.electronAPI.onDockSnapChanged((side) => {
+  petBody.classList.remove('dock-top', 'dock-bottom', 'dock-left', 'dock-right');
+  if (side) {
+    petBody.classList.add('dock-' + side);
   }
 });
 

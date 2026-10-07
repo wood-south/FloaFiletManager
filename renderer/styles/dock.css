@@ -12,6 +12,15 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-app-region: no-drag;
   user-select: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .dock-container {
@@ -20,36 +29,125 @@ html, body {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: 16px;
+  padding-bottom: 2px;
+  position: relative;
+  overflow: visible;
 }
 
 .dock-panel {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 4px;
-  padding: 8px 16px;
-  background: rgba(30, 30, 30, var(--dock-opacity, 0.72));
-  backdrop-filter: blur(var(--dock-blur, 30px)) saturate(1.5);
-  -webkit-backdrop-filter: blur(var(--dock-blur, 30px)) saturate(1.5);
-  border-radius: 24px;
-  box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.35),
-    0 4px 12px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: box-shadow 0.3s ease;
+  padding: 6px 12px 4px;
+  border-radius: var(--dock-radius, 24px);
+  flex-shrink: 0;
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  box-shadow: none;
 }
 
-.dock-panel:hover {
-  box-shadow:
-    0 16px 50px rgba(0, 0, 0, 0.4),
-    0 6px 16px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+/* 基础层结构：仅定位属性，无任何视觉效果
+   各模式独立覆盖 ::before / ::after，互不影响 */
+.dock-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
 }
 
-.dock-start {
+/* 亚克力噪点层结构（独立 ::after） */
+.dock-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* ============================================
+   玻璃模式 (glass-mode) — 独立图层
+   ::before: 白色遮罩 + blur + scale(1.02)
+   无 ::after
+   ============================================ */
+.dock-panel.glass-mode::before {
+  background: rgba(255, 255, 255, var(--dock-glass-opacity, 0.2));
+  filter: blur(var(--dock-glass-blur, 20px));
+  transform: scale(1.02);
+  transform-origin: center center;
+}
+.dock-panel.glass-mode::after {
+  content: none;
+}
+.dock-panel.glass-mode {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* ============================================
+   高斯模式 (gaussian-mode) — 独立图层
+   ::before: 纯 filter: blur() 透明层
+   无 ::after
+   ============================================ */
+.dock-panel.gaussian-mode::before {
+  background: transparent;
+  filter: blur(var(--dock-gaussian-blur, 16px));
+}
+.dock-panel.gaussian-mode::after {
+  content: none;
+}
+.dock-panel.gaussian-mode {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* ============================================
+   亚克力模式 (acrylic-mode) — 独立图层
+   ::before: blur + saturate 透明层
+   ::after:  SVG 噪点叠加
+   ============================================ */
+.dock-panel.acrylic-mode::before {
+  background: transparent;
+  filter: blur(var(--dock-acrylic-blur, 60px)) saturate(2);
+}
+.dock-panel.acrylic-mode::after {
+  content: '';
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  background-size: 120px 120px;
+  opacity: var(--dock-acrylic-opacity, 0.08);
+  mix-blend-mode: overlay;
+}
+.dock-panel.acrylic-mode {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* ============================================
+   自定义模式 (custom-mode) — 独立图层
+   ::before: 颜色 + 透明度 + blur + saturate
+   ::after:  SVG 噪点叠加
+   ============================================ */
+.dock-panel.custom-mode::before {
+  background: var(--dock-custom-color, rgba(30, 30, 30, 1));
+  opacity: var(--dock-custom-opacity, 0.5);
+  filter: blur(var(--dock-custom-blur, 40px)) saturate(2);
+}
+.dock-panel.custom-mode::after {
+  content: '';
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  background-size: 120px 120px;
+  opacity: var(--dock-acrylic-opacity, 0.08);
+  mix-blend-mode: overlay;
+}
+.dock-panel.custom-mode {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.dock-start,
+.dock-power,
+.dock-item,
+.dock-tray-item {
   width: 52px;
   height: 52px;
   display: flex;
@@ -57,71 +155,169 @@ html, body {
   justify-content: center;
   border-radius: 16px;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease;
   background: rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
+  transform-origin: center bottom;
 }
 
-.dock-start:hover {
-  transform: translateY(-10px) scale(1.15);
+.dock-start:hover,
+.dock-power:hover,
+.dock-tray-item:hover {
+  transform: translateY(-5px) scale(1.06);
   background: rgba(255, 255, 255, 0.14);
 }
 
-.dock-start svg {
-  width: 24px;
-  height: 24px;
+.dock-start svg,
+.dock-power svg,
+.dock-tray-item svg {
+  width: 28px;
+  height: 28px;
+}
+
+.dock-power {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.dock-power:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
 }
 
 .dock-separator {
   width: 1px;
-  height: 32px;
+  height: var(--dock-sep-height, 32px);
   background: rgba(255, 255, 255, 0.1);
   margin: 0 4px;
   flex-shrink: 0;
+  align-self: center;
+}
+
+.dock-items-wrapper {
+  position: relative;
+  /* 使用 overflow: hidden 确保兼容性，防止堆叠 */
+  overflow: hidden;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* 仅显示快捷图标模式：隐藏开始按钮、分隔线、托盘区 */
+.dock-container.only-shortcuts .dock-power,
+.dock-container.only-shortcuts .dock-start,
+.dock-container.only-shortcuts .dock-separator,
+.dock-container.only-shortcuts .dock-tray {
+  display: none !important;
 }
 
 .dock-items {
+  position: relative;
+  /* 使用 overflow: hidden 防止图标堆叠，兼容性更好 */
+  overflow: hidden;
+  flex: 0 0 auto;
+  /* 不允许flex压缩 */
+  flex-shrink: 0;
+  /* 顶部内边距预留hover上浮空间 */
+  padding-top: 10px;
+  margin-top: -6px;
+  /* 隐藏原生滚动条痕迹 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.dock-items::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.dock-items-inner {
   display: flex;
   align-items: flex-end;
   gap: 6px;
   padding: 0 4px;
+  will-change: transform;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* 不收缩，防止图标堆叠 */
+  flex-shrink: 0 !important;
+  /* 允许内容溢出以支持滚动 */
+  overflow: visible;
 }
 
-.dock-item {
-  width: 52px;
-  height: 52px;
+.dock-scroll-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
   cursor: pointer;
-  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 20;
+  color: rgba(255, 255, 255, 0.7);
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, background 0.2s ease;
+}
+
+.dock-scroll-btn.visible {
+  opacity: 0.7;
+  pointer-events: auto;
+}
+
+.dock-scroll-btn.visible:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.dock-scroll-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.dock-scroll-btn.left {
+  left: 4px;
+}
+
+.dock-scroll-btn.right {
+  right: 4px;
+}
+
+.dock-scroll-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dock-item {
   color: rgba(255, 255, 255, 0.9);
-  flex-shrink: 0;
   position: relative;
-  background: rgba(255, 255, 255, 0.05);
 }
 
 .dock-item:hover {
-  transform: translateY(-14px) scale(1.25);
+  transform: translateY(-5px) scale(1.07);
   background: rgba(255, 255, 255, 0.12);
 }
 
 /* 邻居效果：悬停时相邻图标轻微放大 */
 .dock-item:hover + .dock-item,
 .dock-item:has(+ .dock-item:hover) {
-  transform: translateY(-6px) scale(1.08);
+  transform: translateY(-3px) scale(1.04);
 }
 
 .dock-item svg {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
 
 .dock-item img {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
@@ -188,42 +384,51 @@ html, body {
   display: flex;
   align-items: flex-end;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .dock-tray-item {
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   color: rgba(255, 255, 255, 0.75);
-  background: rgba(255, 255, 255, 0.04);
-  flex-shrink: 0;
   position: relative;
 }
 
 .dock-tray-item:hover {
-  transform: translateY(-8px) scale(1.12);
-  background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.95);
 }
 
-.dock-tray-item svg {
-  width: 18px;
-  height: 18px;
+#dockBattery {
+  flex-direction: column;
+  gap: 0;
+  padding: 2px;
+}
+
+#dockBattery .tray-text {
+  font-size: 9px;
+  font-weight: 600;
+  margin-top: -2px;
+  font-variant-numeric: tabular-nums;
 }
 
 #dockTime {
   font-size: 10px;
   color: rgba(255, 255, 255, 0.8);
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.15;
   text-align: center;
   flex-direction: column;
   gap: 1px;
+  padding: 2px;
+}
+
+#dockTime .time-date {
+  font-size: 9px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+#dockTime .time-clock {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .dock-close {
@@ -245,17 +450,22 @@ html, body {
 /* 右键菜单 */
 .dock-context-menu {
   position: fixed;
-  background: rgba(38, 38, 38, 0.96);
-  backdrop-filter: blur(25px);
-  -webkit-backdrop-filter: blur(25px);
+  background: linear-gradient(
+    180deg,
+    rgba(42, 42, 48, 0.96) 0%,
+    rgba(28, 28, 34, 0.98) 100%
+  );
+  backdrop-filter: blur(60px) saturate(2.2);
+  -webkit-backdrop-filter: blur(60px) saturate(2.2);
   border-radius: 14px;
   padding: 6px;
   min-width: 160px;
   z-index: 10000;
   box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   animation: menuAppear 0.15s ease;
 }
 
@@ -307,223 +517,389 @@ html, body {
   opacity: 0.9;
 }
 
-/* 设置面板 */
-.dock-settings-panel {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) scale(0.9);
-  width: 320px;
-  background: rgba(35, 35, 35, 0.96);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
-  border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* ========== Dock 浮层（音量/WiFi） ========== */
+.dock-popup {
+  position: absolute;
+  background: var(--dock-bg, #1e1e1e);
+  border-radius: var(--dock-radius, 24px);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  z-index: 100;
   opacity: 0;
-  visibility: hidden;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  z-index: 10001;
-  overflow: hidden;
+  transform: translateY(8px) scale(0.96);
+  transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
 }
 
-.dock-settings-panel.active {
+/* 玻璃模式：浮层（可调节） */
+.dock-container.glass-mode .dock-popup {
+  background: rgba(255, 255, 255, var(--dock-glass-opacity, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.3),
+    0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* 高斯模式：浮层 */
+.dock-container.gaussian-mode .dock-popup {
+  background: rgba(30, 30, 30, 1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* 亚克力模式：浮层 */
+.dock-container.acrylic-mode .dock-popup {
+  background: rgba(0, 0, 0, 0.01);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* 自定义模式：浮层 */
+.dock-container.custom-mode .dock-popup {
+  background: var(--dock-custom-color, rgba(30, 30, 30, 1));
+  opacity: var(--dock-custom-opacity, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.dock-popup.show {
   opacity: 1;
-  visibility: visible;
-  transform: translate(-50%, -50%) scale(1);
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
 }
 
-.settings-header {
+.dock-popup[hidden] {
+  display: none !important;
+}
+
+/* 音量浮层 */
+.volume-popup {
+  padding: 14px 16px;
+  min-width: 220px;
+}
+
+.popup-volume-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 12px;
 }
 
-.settings-header h3 {
-  color: rgba(255, 255, 255, 0.95);
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.settings-close {
-  width: 32px;
-  height: 32px;
+.popup-mute-btn {
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: none;
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.settings-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.settings-close svg {
-  width: 16px;
-  height: 16px;
-}
-
-.settings-content {
-  padding: 16px 20px;
-}
-
-.settings-section {
-  margin-bottom: 20px;
-}
-
-.settings-section:last-child {
-  margin-bottom: 0;
-}
-
-.settings-title {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 10px;
-}
-
-.settings-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  margin-bottom: 8px;
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
-
-.settings-item:hover {
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
-}
-
-.settings-item:last-child {
-  margin-bottom: 0;
-}
-
-.settings-item input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin-right: 12px;
-  accent-color: #0078d4;
-  cursor: pointer;
-}
-
-.settings-item span {
+  border: none;
   color: rgba(255, 255, 255, 0.9);
-  font-size: 13px;
-}
-
-.settings-btn {
-  flex: 1;
-  padding: 10px 16px;
-  background: rgba(0, 120, 212, 0.15);
-  border: 1px solid rgba(0, 120, 212, 0.3);
-  border-radius: 10px;
-  color: #0078d4;
-  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
-.settings-btn:hover {
-  background: rgba(0, 120, 212, 0.25);
-  border-color: rgba(0, 120, 212, 0.5);
+.popup-mute-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
-.settings-info {
-  padding: 8px 12px;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
+.popup-mute-btn.muted {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
 }
 
-.settings-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-  opacity: 0;
-  visibility: hidden;
-  transition: all 0.3s ease;
-  z-index: 10000;
+.popup-mute-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
-.settings-overlay.active {
-  opacity: 1;
-  visibility: visible;
-}
-
-/* 滑块样式 */
-.settings-slider-item {
-  padding: 10px 12px;
-  margin-bottom: 8px;
-}
-
-.settings-slider-item:last-child {
-  margin-bottom: 0;
-}
-
-.slider-label {
+.popup-volume-slider-wrap {
+  flex: 1;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 13px;
+  gap: 10px;
 }
 
-.slider-label span:last-child {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.settings-slider {
+.popup-volume-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 100%;
+  flex: 1;
   height: 4px;
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(to right, #0078d4 0%, #0078d4 var(--vol, 50%), rgba(255,255,255,0.12) var(--vol, 50%), rgba(255,255,255,0.12) 100%);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
 }
 
-.settings-slider::-webkit-slider-thumb {
+.popup-volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #0078d4;
+  background: #fff;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 120, 212, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: transform 0.15s ease;
 }
 
-.settings-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
+.popup-volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
 }
 
-.settings-slider::-moz-range-thumb {
+.popup-volume-slider::-moz-range-thumb {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #0078d4;
+  background: #fff;
   cursor: pointer;
   border: none;
-  box-shadow: 0 2px 8px rgba(0, 120, 212, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.popup-volume-value {
+  min-width: 32px;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* WiFi 浮层 */
+.wifi-popup {
+  padding: 12px 0 8px;
+  width: 280px;
+}
+
+.wifi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px 10px;
+}
+
+.wifi-title {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wifi-refresh-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.wifi-refresh-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.wifi-refresh-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.wifi-refresh-btn.spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.wifi-status {
+  padding: 0 16px 10px;
+}
+
+.wifi-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(0, 120, 212, 0.12);
+  border-radius: 12px;
+}
+
+.wifi-status-row.disconnected {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* 有线连接样式 */
+.wifi-status-row.wired {
+  background: rgba(0, 200, 83, 0.1);
+}
+
+.wifi-status-row.wired.disconnected {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.wifi-status-row.wired .wifi-status-icon {
+  color: #4caf50;
+}
+
+.wifi-status-row.wired.disconnected .wifi-status-icon {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.wifi-status-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #4fc3f7;
+}
+
+.wifi-status-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.wifi-status-row.disconnected .wifi-status-icon {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.wifi-status-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.wifi-status-ssid {
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wifi-status-signal {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.wifi-disconnect-btn {
+  padding: 4px 10px;
+  background: rgba(255, 107, 107, 0.15);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: 8px;
+  color: #ff7b7b;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.wifi-disconnect-btn:hover {
+  background: rgba(255, 107, 107, 0.25);
+}
+
+.wifi-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 2px 16px;
+}
+
+.wifi-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 8px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.wifi-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wifi-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.wifi-empty {
+  padding: 12px 8px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+}
+
+.wifi-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.wifi-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.wifi-item.active {
+  background: rgba(0, 120, 212, 0.12);
+}
+
+.wifi-item-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.wifi-item-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.wifi-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.wifi-item-name {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wifi-item-meta {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.wifi-item-connecting {
+  color: #4fc3f7;
+  font-size: 10px;
+  font-style: italic;
+  flex-shrink: 0;
 }
