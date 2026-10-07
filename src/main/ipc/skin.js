@@ -56,6 +56,20 @@ function register({ userDataDir, rootDir, loadConfig, saveConfig }) {
   const userRoot = userDataDir ? path.join(userDataDir, 'pets') : null;
   const builtinRoot = rootDir ? path.join(rootDir, 'renderer', 'pet', 'skins') : null;
 
+  /* 接收渲染进程转发的日志并写进主进程日志文件。
+     用 ipcMain.on（单向）而不是 handle：日志不需要回执。
+     前缀 [renderer] 便于与主进程日志区分。 */
+  ipcMain.on('renderer-log', (event, payload) => {
+    try {
+      const level = payload && typeof payload.level === 'string' ? payload.level : 'info';
+      const message = payload && payload.message !== undefined ? String(payload.message) : '';
+      const fn = level === 'error' ? console.error
+        : level === 'warn' ? console.warn : console.log;
+      fn('[renderer] ' + message);
+    } catch (_) { /* 日志失败不能影响业务 */ }
+    void event;
+  });
+
   /** 先查用户皮肤，再查内置皮肤；返回 { dir, source } 或 null */
   function findSkinById(skinId, user, builtin) {
     if (user) {

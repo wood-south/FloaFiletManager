@@ -57,7 +57,7 @@ try {
   Module._load = originalLoad;
 }
 
-const { CAPABILITIES, allDeclaredChannels, isEnabled, listMeta } = capsModule;
+const { CAPABILITIES, allDeclaredChannels, allOneWayChannels, isEnabled, listMeta } = capsModule;
 
 /* 跑一遍真实注册（collect 模式：只收集通道名，不校验依赖齐全） */
 const noop = () => {};
@@ -112,7 +112,8 @@ const sortJoin = (arr) => arr.slice().sort().join(', ');
 console.log('\n[1] 能力声明 ↔ 真实注册（逐个能力）');
 for (const cap of CAPABILITIES) {
   const real = Array.from(new Set(perCapability[cap.id])).sort();
-  const declared = cap.channels.slice().sort();
+  // 单向通道（oneWayChannels）也要与真实注册一致，因此并入声明集合
+  const declared = cap.channels.concat(cap.oneWayChannels || []).slice().sort();
   ok(cap.id + '：声明 ' + declared.length + ' 个通道，与真实注册一致', () => {
     assert.strictEqual(declared.length, real.length,
       '数量不符 声明=' + declared.length + ' 真实=' + real.length +
@@ -150,9 +151,16 @@ console.log('\n[2] 能力之间不重复声明 + 并集覆盖全部');
 
 console.log('\n[3] 能力层 ↔ preload 一一对应');
 {
-  const declared = allDeclaredChannels().slice().sort();
-  const pre = preloadChannels.slice().sort();
-  ok('主进程通道数 = preload 桥接通道数', () => {
+  /* 单向通道（ipcMain.on）preload 侧用 send 而不是 invoke，
+     因此不参与「通道 ↔ 方法名」的一一对应；它们由 allOneWayChannels() 单独声明。 */
+  const oneWay = (typeof allOneWayChannels === 'function' ? allOneWayChannels() : []);
+  const declared = allDeclaredChannels().filter((c) => !oneWay.includes(c)).sort();
+  const pre = preloadChannels.filter((c) => !oneWay.includes(c)).sort();
+  ok('单向通道已单独建模（renderer-log 不应混进 handle 通道）', () => {
+    assert.ok(oneWay.length >= 1, '没有任何单向通道声明，说明建模没生效');
+    assert.ok(oneWay.includes('renderer-log'), 'renderer-log 未声明为单向通道');
+  });
+  ok('主进程通道数 = preload 桥接通道数（不含单向）', () => {
     assert.strictEqual(declared.length, pre.length,
       '主进程=' + declared.length + ' preload=' + pre.length);
   });

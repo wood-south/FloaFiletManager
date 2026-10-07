@@ -140,6 +140,9 @@ const CAPABILITIES = [
       'select-skin-directory', 'select-skin-zip',
       'apply-skin', 'get-active-skin', 'preview-skin'
     ],
+    // 单向上报：渲染进程转发日志给主进程写盘（无需回执，故不在 channels 里）
+    oneWayChannels: ['renderer-log'],
+
     build: (deps) => ({
       userDataDir: deps.userDataDir,
       rootDir: deps.rootDir,
@@ -177,6 +180,21 @@ function allDeclaredChannels() {
   const out = [];
   for (const cap of CAPABILITIES) {
     for (const ch of cap.channels) out.push(ch);
+    for (const ch of (cap.oneWayChannels || [])) out.push(ch);
+  }
+  return out;
+}
+
+/** 声明为**单向**的通道（ipcMain.on：只上报、无回执）。
+ *
+ *  这类通道 preload 侧用 send 而不是 invoke，因此不参与
+ *  「主进程通道 ↔ preload 方法」的一一对应检查。
+ *  单独建模而不是把它们混进普通通道，是为了保住那条检查的强度 ——
+ *  它对 handle 型通道很有价值（漏桥接、写错名字都会当场失败）。 */
+function allOneWayChannels() {
+  const out = [];
+  for (const cap of CAPABILITIES) {
+    for (const ch of (cap.oneWayChannels || [])) out.push(ch);
   }
   return out;
 }
@@ -227,13 +245,15 @@ function listMeta() {
     name: cap.name,
     description: cap.description,
     defaultEnabled: cap.defaultEnabled !== false,
-    channelCount: cap.channels.length
+    // 含声明的单向通道，使「逐能力之和 = allDeclaredChannels().length」
+    channelCount: cap.channels.length + (cap.oneWayChannels || []).length
   }));
 }
 
 module.exports = {
   CAPABILITIES,
   allDeclaredChannels,
+  allOneWayChannels,
   isEnabled,
   loadAll,
   listMeta

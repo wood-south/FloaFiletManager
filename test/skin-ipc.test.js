@@ -77,12 +77,12 @@ console.log('\n[1] 模块加载与通道注册');
   ok('register 接受缺失路径而不抛错', () => {
     assert.doesNotThrow(() => skin.register({}));
   });
-  ok('register 后注册了 8 个通道', () => {
+  ok('register 后注册了 8 个 handle 通道 + 1 个单向通道', () => {
     handlers.length = 0;
     skin.register({ userDataDir: root, rootDir: root });
     assert.deepStrictEqual(handlers.slice().sort(),
       ['apply-skin', 'export-skin', 'get-active-skin', 'import-skin', 'list-skins',
-        'preview-skin', 'select-skin-directory', 'select-skin-zip']);
+        'preview-skin', 'renderer-log', 'select-skin-directory', 'select-skin-zip']);
   });
   ok('重复 register 不会抛错（交由 electron 处理重复注册）', () => {
     assert.doesNotThrow(() => skin.register({ userDataDir: root, rootDir: root }));
@@ -278,6 +278,22 @@ console.log('\n[7] 渲染层接线契约（通道 ↔ preload ↔ 浮窗壳层�
   ok('preload 提供换肤广播订阅（onSkinChanged → skin-changed）', () => {
     assert.ok(preload.includes('onSkinChanged'), 'preload 缺少 onSkinChanged');
     assert.ok(preload.includes("ipcRenderer.on('skin-changed'"), '未订阅 skin-changed');
+  });
+  ok('渲染进程日志能转发到主进程（否则渲染侧问题无法排查）', () => {
+    // 渲染进程的 console 只在 DevTools 里可见；不转发就只能靠用户手抄日志
+    assert.ok(preload.includes('sendLog'), 'preload 缺少 sendLog');
+    assert.ok(preload.includes("ipcRenderer.send('renderer-log'"), '未转发到 renderer-log');
+    const src = fs.readFileSync(path.join(root, 'src', 'main', 'ipc', 'skin.js'), 'utf8');
+    assert.ok(src.includes("ipcMain.on('renderer-log'"), '主进程未接收 renderer-log');
+    assert.ok(src.includes("'[renderer] '"), '转发的日志未加 [renderer] 前缀，无法与主进程日志区分');
+  });
+  ok('浮窗用 petLog 输出关键节点（同时进日志文件）', () => {
+    assert.ok(/function petLog\(/.test(floatJs), '缺少 petLog');
+    assert.ok(/describeSkinState\(\)/.test(floatJs), '缺少状态体检函数');
+    // 启动、换肤、图集就绪、状态变化 四个关键点都要有日志
+    ['启动完成', '应用皮肤', '图集就绪', '状态 '].forEach((kw) => {
+      assert.ok(floatJs.includes(kw), '缺少关键日志: ' + kw);
+    });
   });
   ok('主进程换肤后会广播 skin-changed', () => {
     const src = fs.readFileSync(path.join(root, 'src', 'main', 'ipc', 'skin.js'), 'utf8');

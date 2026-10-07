@@ -82,6 +82,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const fn = (_event, skin) => cb(skin);
     ipcRenderer.on('skin-changed', fn);
     return () => ipcRenderer.removeListener('skin-changed', fn);
+  },
+  /* 把渲染进程的日志转发给主进程写盘。
+     渲染进程的 console 只在自己窗口的 DevTools 里可见，
+     而"桌宠为什么不动"这类问题恰恰出在渲染进程 ——
+     不转发就只能靠用户手抄，排查效率极低。 */
+  sendLog: (level, message) => {
+    try {
+      ipcRenderer.send('renderer-log', { level, message });
+    } catch (_) { /* 日志失败不能影响业务 */ }
   },  // 主进程能力清单与启用开关（阶段 5：关闭的能力不注册其 IPC 通道，重启生效）
   capabilityList: () => ipcRenderer.invoke('capability-list'),
   capabilityEnable: (capabilityId, enabled) => ipcRenderer.invoke('capability-enable', { capabilityId, enabled }),

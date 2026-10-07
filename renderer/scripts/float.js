@@ -503,14 +503,52 @@ skinRenderer = window.PET_SKIN_RENDER
   ? window.PET_SKIN_RENDER.createSkinRenderer({
     canvas: petCanvas,
     // 加载失败/不可用时回调：确保内置 SVG 回到可见状态，绝不白屏
-    onFallback: () => {
+    onFallback: (why) => {
       const img = petSvg?.parentElement?.querySelector('.pet-skin-img');
       if (img) img.remove();
       syncPetVisuals();
+      petLog('渲染器回落: ' + why + ' | ' + describeSkinState(), 'warn');
     },
-    onReady: () => syncPetVisuals()
+    onReady: () => {
+      syncPetVisuals();
+      petLog('图集就绪，进入帧渲染 | ' + describeSkinState());
+    }
   })
   : null;
+
+if (!skinRenderer) {
+  petLog('未创建皮肤渲染器（PET_SKIN_RENDER 缺失或未先加载）| ' +
+    '有PET_SKIN_RENDER=' + !!window.PET_SKIN_RENDER, 'error');
+}
+
+/** 把诊断信息同时打到控制台和主进程日志。
+ *  渲染进程的 console 只在 DevTools 里可见，而"桌宠为什么不动"恰恰出在这一侧 ——
+ *  不转发出去就没法排查（用户手抄日志不可行）。 */
+function petLog(message, level) {
+  const lv = level || 'info';
+  if (lv === 'error') console.error('[pet] ' + message);
+  else if (lv === 'warn') console.warn('[pet] ' + message);
+  else console.log('[pet] ' + message);
+  if (window.electronAPI?.sendLog) {
+    window.electronAPI.sendLog(lv, '[pet] ' + message);
+  }
+}
+
+/** 皮肤链路的完整体检（供启动、换肤、诊断三处复用） */
+function describeSkinState() {
+  const skin = skinRenderer ? skinRenderer.current() : null;
+  const canvas = petCanvas;
+  return [
+    '皮肤=' + (skin ? skin.id + '(' + skin.render.kind + ')' : '无'),
+    '画面模式=' + (petBody ? petBody.dataset.petVisual : '?'),
+    '帧模式=' + (skinRenderer ? skinRenderer.isFrameMode() : '无渲染器'),
+    '渲染器状态=' + (skinRenderer ? skinRenderer.state() : '-'),
+    '状态机=' + behavior.describe().state,
+    '已绘帧=' + (skinRenderer ? skinRenderer.drawnFrames() : '-'),
+    '画布=' + (canvas ? canvas.width + 'x' + canvas.height : '无'),
+    '驱动=' + (behaviorDriver ? (behaviorDriver.isEnabled() ? '已启用' : '已停用') : '无')
+  ].join('  ');
+}
 
 /** 按渲染器当前模式统一决定「画布 / 内置 SVG / 皮肤 SVG」谁显示。
  *
@@ -572,6 +610,8 @@ function applySkinToShell(skin) {
 
   // 依次尝试：帧动画 → 皮肤 SVG → 内置 SVG
   const frameMode = skinRenderer.apply(skin);
+  petLog('应用皮肤: ' + (skin ? skin.id : '（内置）') +
+    ' → 接管=' + frameMode + ' | ' + describeSkinState());
   if (frameMode) {
     // 帧模式：等图集解码完成由 onReady 切显示；这里先别让旧画面留着
     syncPetVisuals();
@@ -647,6 +687,9 @@ if (skinRenderer && window.PET_SKIN_RENDER) {
     return info;
   };
   console.log('[pet] 皮肤渲染已启动，控制台执行 petDebug() 可查看状态');
+  petLog('启动完成 | ' + describeSkinState());
+  // 稍后（图集解码通常几十毫秒）再报一次，用于确认最终落到了哪个画面模式
+  setTimeout(() => petLog('启动 1.5s 后 | ' + describeSkinState()), 1500);
 
   /* 状态变化日志：每条都带上当前该渲染的帧号。
      "只有一种动画播放"这种问题，看这个日志一眼就能判断是
@@ -654,7 +697,7 @@ if (skinRenderer && window.PET_SKIN_RENDER) {
   if (typeof behavior.subscribe === 'function') {
     behavior.subscribe((info) => {
       const frame = skinRenderer.isFrameMode() ? skinRenderer.lastFrame() : null;
-      console.log('[pet] 状态 ' + (info.from || '?') + ' → ' + info.state +
+      petLog('状态 ' + (info.from || '?') + ' → ' + info.state +
         (frame === null ? '（未进入帧渲染）' : '（上一帧 ' + frame + '）'));
     });
   }

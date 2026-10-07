@@ -38,9 +38,16 @@ capabilities.loadAll({ loadConfig, saveConfig, screen, app, windows, ... });
 | `file-manager` | 文件管理 | 12 | 启用 | 列表/搜索/上传/移动/删除/原生拖出，含文件图标 |
 | `file-dialog` | 目录选择与打开 | 7 | 启用 | 系统目录选择框、打开文件/所在位置、此电脑、消息框 |
 | `partitions` | 分区与路径 | 17 | 启用 | 分区 CRUD、快捷路径、首选路径，另含能力配置读写通道 |
-| `skins` | 皮肤包 | 8 | 启用 | 列出 / 导入（目录与 zip）/ 导出 / 试穿预览 / 应用 / 查询当前皮肤 |
+| `skins` | 皮肤包 | 9 | 启用 | 列出 / 导入（目录与 zip）/ 导出 / 试穿预览 / 应用 / 查询当前皮肤；另含单向上报的 `renderer-log`（渲染层日志转发给主进程写盘） |
 | `system` | 系统能力 | 23 | 启用 | 系统动作、电源、音量、网络/WiFi、电量、任务栏与桌面图标 |
-| | **合计** | **101** | | |
+| | **合计** | **102** | | |
+
+> **单向通道**：`renderer-log` 用 `ipcMain.on`（无回执），因此 preload 侧用 `send`
+> 而不是 `invoke`，不参与「通道 ↔ preload 方法」的一一对应检查。
+> 它在能力声明里单独列在 `oneWayChannels`，由契约测试校验
+> 「声明 ↔ 真实注册一致」，但不参与 preload 对齐 ——
+> 这样既不放松那条有价值的检查，又能容纳单向上报。
+
 
 <!-- CAPABILITIES-TABLE-END -->
 
