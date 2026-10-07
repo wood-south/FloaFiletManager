@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>文件管理</title>
+  <link rel="stylesheet" href="styles/primitives.css">
   <link rel="stylesheet" href="styles/file-manager.css">
 </head>
 <body>
@@ -153,6 +154,9 @@
     <div class="ctx-item danger" data-action="removePath">从分区移除</div>
   </div>
 
+  <div class="toast" id="toast"></div>
+
+  <script src="scripts/primitives.js"></script>
   <script src="scripts/file-manager.js"></script>
 </body>
 </html>

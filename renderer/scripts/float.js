@@ -35,58 +35,40 @@ function enableClickThrough() {
 // 初始化：窗口加载后启用点击穿透
 enableClickThrough();
 
-const MODAL_ICONS = {
-  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M8 12.5l2.5 2.5L16 9.5"></path></svg>',
-  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
-  question: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
-  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
-};
-
-async function showModal({ type = 'question', title, message, buttons }) {
-  // 浮窗默认仅 160x160，需先临时扩容以完整显示模态框
-  if (window.electronAPI.expandFloatWindow) {
-    await window.electronAPI.expandFloatWindow(420, 320);
+/* ========== 共用 UI 原语（模态框 / Toast） ==========
+   实现见 renderer/scripts/primitives.js，避免与文件管理器各写一份。
+   浮窗特有行为通过钩子注入：
+   - onOpen：模态打开前扩容窗口（浮窗默认仅 160x160，放不下模态框）
+   - onClose：恢复窗口尺寸，并在菜单/退出按钮都关闭时恢复点击穿透 */
+const ui = window.createPrimitives({
+  overlay: modalOverlay,
+  icon: modalIcon,
+  title: modalTitle,
+  message: modalMessage,
+  buttons: modalButtons,
+  toast,
+  onOpen: () => {
+    // 浮窗默认仅 160x160，需先临时扩容以完整显示模态框
+    if (window.electronAPI.expandFloatWindow) {
+      window.electronAPI.expandFloatWindow(420, 320);
+    }
+    modalActive = true;
+    enableMouseCapture(); // 模态框打开期间关闭穿透，确保按钮可点击
+  },
+  onClose: () => {
+    modalActive = false;
+    // 关闭后恢复浮窗原尺寸
+    if (window.electronAPI.restoreFloatWindow) {
+      window.electronAPI.restoreFloatWindow();
+    }
+    // 恢复穿透：仅当菜单/退出按钮也都关闭时
+    if (!menuOpen && !quitOpen) enableClickThrough();
   }
+});
 
-  modalActive = true;
-  enableMouseCapture(); // 模态框打开期间关闭穿透，确保按钮可点击
-
-  return new Promise((resolve) => {
-    modalIcon.className = 'modal-icon ' + type;
-    modalIcon.innerHTML = MODAL_ICONS[type] || MODAL_ICONS.question;
-    modalTitle.textContent = title || '';
-    modalMessage.textContent = message || '';
-    modalButtons.innerHTML = '';
-
-    buttons.forEach((btn, index) => {
-      const el = document.createElement('button');
-      el.className = 'modal-btn ' + (btn.style || 'secondary');
-      el.textContent = btn.text;
-      el.onclick = () => {
-        modalOverlay.classList.remove('active');
-        modalActive = false;
-        // 关闭后恢复浮窗原尺寸
-        if (window.electronAPI.restoreFloatWindow) {
-          window.electronAPI.restoreFloatWindow();
-        }
-        // 恢复穿透：仅当菜单/退出按钮也都关闭时
-        if (!menuOpen && !quitOpen) enableClickThrough();
-        resolve(index);
-      };
-      modalButtons.appendChild(el);
-    });
-
-    modalOverlay.classList.add('active');
-  });
-}
-
-function showToast(message, duration = 2000) {
-  toast.textContent = message;
-  toast.classList.add('show');
-  setTimeout(() => {
-    toast.classList.remove('show');
-  }, duration);
-}
+// 语义化包装：保持原有调用点（showModal / showToast）
+const showModal = (config) => ui.modal(config);
+const showToast = (message, duration = 2000) => ui.toast(message, duration);
 
 function toggleMenu() {
   if (menuOpen) {

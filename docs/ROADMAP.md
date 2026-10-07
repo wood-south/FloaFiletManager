@@ -59,14 +59,34 @@
 
 把三处重复的 UI 实现收敛为一份。
 
-| 项 | 内容 |
-| --- | --- |
-| 0.1 | 新建 `renderer/shared/primitives.js`：`showModal` / `showInputModal` / `showToast` 工厂 |
-| 0.2 | 新建 `renderer/shared/primitives.css`：合并 `float.css:309-452` 与 `file-manager.css:651-813` 的 `.modal-*` |
-| 0.3 | `float.js`、`file-manager.js` 改为引用共用实现；删除各自副本（`MODAL_ICONS`、`ICONS`、重复 CSS） |
-| 0.4 | `package.json` 增加 `"test": "node --test test/"` 与 `"check": "npm run lint && npm test"` 脚本 |
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 0.1 | 新建 `renderer/scripts/primitives.js`：`createPrimitives()` 工厂，导出 `modal` / `inputModal` / `toast`（原计划放 `renderer/shared/`，因 HTML 目前直接引 `scripts/` 与 `styles/`，放在同级更省改动） | ✅ |
+| 0.2 | 新建 `renderer/styles/primitives.css`：合并两份 `.modal-*` 与 `.toast`，共 27 条规则 | ✅ |
+| 0.3 | `float.js`、`file-manager.js` 改为引用共用实现；删除各自副本（`MODAL_ICONS`、`ICONS`、重复 CSS 共约 330 行） | ✅ |
+| 0.4 | `package.json` 增加 `"test"` 与 `"check"` 脚本 | ✅ |
+| 0.5 | 建立 `test/` 自检体系（`test/run-checks.js` + `test/index.js` + 各模块 `*.test.js`） | ✅ |
 
-**检测**：文件管理器的模态框（含 `#modalInput` 输入型）与桌宠的确认框行为完全一致；CSS 中 `.modal-` 规则只存在于 `shared/primitives.css`。
+**统一取值（原先两处不一致，现为单值）**：`.modal-dialog` 宽高取 320/420；`.modal-message` 下边距取 20px；`.modal-overlay` 统一 `position: absolute`；遮罩底色抽为 CSS 变量 `--modal-overlay-bg`（默认透明＝原浮窗行为，文件管理器覆盖为 `rgba(0,0,0,0.35)`）；补 `.modal-icon.success` 配色（图标表本就含 `success`，但原 CSS 缺该变体）。
+
+**检测**：ESLint 全绿；页面 CSS 中 `.modal`/`.toast` 规则数 **0**，`primitives.css` **27**；脚本中重复的 `showModal` 定义 **0**；`npm test` 运行 2 个自检脚本、**46 项断言全部通过**（guard 22 + primitives 24），其中 primitives 用最小 DOM 桩加载**真实源码**，重点守住取消语义（`modal` 取消 resolve **-1**、`inputModal` 取消/空值 resolve **null**，避免与调用方的 `choice !== 0` 判断反向）。
+
+**关于测试运行器**：`node --test` 依赖子进程 stdio 管道，在受限环境下 spawn 会 EPERM，故改用 `test/run-checks.js` 顺序 `spawnSync(stdio: inherit)` 逐个执行自检脚本，兼容性更好。
+
+**提交**：`refactor: 阶段0 抽取共用 UI 原语（模态框/Toast）`
+
+---
+
+### 测试体系（从阶段 0 起持续积累）
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run lint` | ESLint 全量检查（main / preload / renderer / src） |
+| `npm test` | 顺序运行 `test/index.js` 中登记的所有自检脚本 |
+| `npm run check` | lint + test，阶段收尾必跑 |
+
+**当前自检脚本**：`test/guard.test.js`（22 项）、`test/primitives.test.js`（24 项）。
+**约定**：后续每个阶段新增的纯逻辑（吸附几何 `snap.js`、配置迁移、路径处理等）都要补对应 `*.test.js` 并登记到 `test/index.js`。
 
 ---
 
@@ -207,7 +227,7 @@
 ```
 ✅ 阶段 −1:  fix: 阶段-1 止损（文件管理器拖动、图标缓存位置、IPC 路径校验）      [5f62f03]
 ✅ 阶段 −1.5: fix: 阶段-1.5 修复文件列表陈旧与 Dock 失效图标无反馈              [38bc848]
-   阶段  0:  refactor: 抽取共用模态框与 Toast 原语
+✅ 阶段  0:  refactor: 阶段0 抽取共用 UI 原语（模态框/Toast）
    阶段  1:  refactor: 抽出 quick-upload 能力并引入能力注册表
    阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁
    阶段  3:  feat: 桌宠动画状态机与皮肤包格式

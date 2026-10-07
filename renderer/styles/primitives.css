@@ -1,0 +1,221 @@
+/* ============================================================
+   共用 UI 原语样式（模态框 / Toast）
+   ------------------------------------------------------------
+   背景：`float.css` 与 `file-manager.css` 各有一份几乎相同的
+   `.modal-*` 实现（仅尺寸与遮罩底色不同），属于重复代码。
+
+   本文件为唯一实现，由 float.html / file-manager.html 在各自
+   页面样式之前引入（页面样式仍可覆盖，保持原有微调能力）。
+
+   合并取值说明（原先两处不一致的值统一为单值）：
+   - `.modal-dialog` 宽高取 file-manager 的 320/420（更宽松：
+     float 窗口模态打开时会扩容到 420×320，可容纳）
+   - `.modal-message` 下边距取 20px（原 float 值，与
+     `.modal-input` 的 20px 一致，输入型模态更协调）
+   - `.modal-overlay` 用 position: absolute —— 模态始终依附于
+     窗口/面板根元素，不随窗口缩放发生中途重排
+   - 遮罩底色默认透明（原 float 行为）；需要压暗的页面通过
+     `--modal-overlay-bg` 覆盖即可
+   ============================================================ */
+
+:root {
+  /* 供页面覆盖：模态遮罩底色 */
+  --modal-overlay-bg: transparent;
+}
+
+/* ============ 模态框 ============ */
+.modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--modal-overlay-bg, transparent);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  border-radius: 12px;
+}
+
+.modal-overlay.active {
+  display: flex;
+  animation: modalFadeIn 0.15s ease;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: modalIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.modal-icon.warning {
+  background: #fef3c7;
+}
+
+.modal-icon.question {
+  background: #dbeafe;
+}
+
+.modal-icon.error {
+  background: #fee2e2;
+}
+
+.modal-icon.success {
+  background: #dcfce7;
+}
+
+.modal-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.modal-icon.warning svg {
+  color: #f59e0b;
+}
+
+.modal-icon.question svg {
+  color: #3b82f6;
+}
+
+.modal-icon.error svg {
+  color: #ef4444;
+}
+
+.modal-icon.success svg {
+  color: #22c55e;
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.modal-message {
+  font-size: 13px;
+  color: #6b7280;
+  text-align: center;
+  margin-bottom: 20px;
+  line-height: 1.5;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #1f2937;
+  outline: none;
+  margin-bottom: 20px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.modal-input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.modal-btn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 80px;
+}
+
+.modal-btn.primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.modal-btn.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.modal-btn.danger {
+  background: #ef4444;
+  color: white;
+}
+
+.modal-btn.danger:hover {
+  background: #dc2626;
+}
+
+.modal-btn.secondary {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.modal-btn.secondary:hover {
+  background: #e5e7eb;
+}
+
+/* ============ Toast ============ */
+.toast {
+  position: fixed;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: all 0.3s ease;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.toast.show {
+  top: 10px;
+  opacity: 1;
+}
