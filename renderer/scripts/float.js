@@ -14,6 +14,30 @@ let quitOpen = false;
 let wasSnapped = false;
 let snapLock = false;
 
+/* ========== 动画状态机（阶段 3 · A 层） ==========
+   实现见 renderer/pet/behavior.js。壳层把「正在发生的事」翻译成状态，
+   并把状态类贴到 petBody 上；CSS 按状态决定播哪个动画。
+   默认状态 idle 对应的动画与接入前完全一致（呼吸 / 阴影脉动 / 眨眼 / 瞳孔移动），
+   因此接入状态机不改变默认外观。 */
+const behavior = window.PET_BEHAVIOR.createBehavior({
+  onChange: (info) => {
+    applyBehaviorState(info);
+  }
+});
+
+/** 上一次贴上的状态类，避免残留多个 state-* 导致动画互相打架 */
+let appliedStateClass = null;
+
+function applyBehaviorState(info) {
+  if (!petBody) return;
+  if (appliedStateClass) petBody.classList.remove(appliedStateClass);
+  petBody.classList.add(info.class);
+  appliedStateClass = info.class;
+}
+
+// 初始化：显式贴上初始状态类（不能只等 onChange —— 初始状态没有「变化」事件）
+applyBehaviorState(behavior.describe());
+
 /* ========== 点击穿透：透明区域允许鼠标穿透到桌面 ==========
    仲裁实现见 renderer/pet/penetration.js：以「交互原因集合」取代原先
    !menuOpen && !quitOpen && !modalActive && !isDragging 的布尔链。
@@ -141,10 +165,18 @@ const interaction = window.createInteraction({
     if (dragging) {
       penetration.acquire(PEN_REASON.drag); // 拖动期间不得恢复穿透，否则 mousemove 会丢
       petBody.classList.add('dragging');
+      behavior.set('drag'); // 拖动优先级最高，会打断其它状态
     } else {
       penetration.release(PEN_REASON.drag);
       petBody.classList.remove('dragging');
+      // 松手后回落到 idle，随后由贴边/吸附事件按需切到 snap
+      behavior.set('idle');
+      syncSnapState();
     }
+  },
+  onInteract: () => {
+    // 按下桌宠 = 一次交互反馈；随后若移动会立刻被 drag 打断（优先级更高）
+    behavior.set('interact');
   },
   onClick: () => toggleMenu(),
   onDoubleClick: () => {
@@ -367,6 +399,7 @@ window.electronAPI.onSnapEdgeChanged((edges) => {
       petBody.classList.add('snap-' + edge);
     }
   }
+  syncSnapState();
 });
 
 /**
@@ -386,7 +419,24 @@ window.electronAPI.onDockSnapChanged((side) => {
   if (side) {
     petBody.classList.add('dock-' + side);
   }
+  syncSnapState();
 });
+
+/**
+ * 把「当前是否贴边/吸附」同步进动画状态机。
+ * 贴边与 Dock 吸附都可能独立发生，因此每次事件后统一重算：
+ * 任一为真 → snap 状态；都为假 → 回落到 idle。
+ * （拖动中不动它 —— drag 优先级高于 snap，由状态机自行拒绝。）
+ */
+function syncSnapState() {
+  if (!petBody || typeof behavior === 'undefined') return;
+  const snapped = hasSnapClass() ||
+    petBody.classList.contains('dock-top') ||
+    petBody.classList.contains('dock-bottom') ||
+    petBody.classList.contains('dock-left') ||
+    petBody.classList.contains('dock-right');
+  behavior.set(snapped ? 'snap' : 'idle');
+}
 
 /* ========== 宠物真实视觉框上报 ==========
    实现见 renderer/pet/anchor.js（测量原理与「为什么不能量窗口/容器/整体包围盒」

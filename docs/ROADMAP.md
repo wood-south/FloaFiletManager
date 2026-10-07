@@ -295,16 +295,61 @@ if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 
 ### 阶段 3：动画系统 A 层 + 皮肤格式
 
-| 项 | 内容 |
-| --- | --- |
-| 3.1 | 动画状态表 + 状态机（`idle/walk/sleep/interact/drag/snap/celebrate`），优先级与播完回落 |
-| 3.2 | 定义 `pet.json` 皮肤包规范（`clips` / `atlas` / `sounds` / `render.size`） |
-| 3.3 | 皮肤加载器：扫描 `userData/pets/` 与内置 `renderer/pet/skins/`，支持热切换 |
-| 3.4 | 现有 SVG 猫改造为第一套内置皮肤（支持换色） |
-| 3.5 | 删掉 `float.css` 中写死在元素上的无限动画，改由状态表驱动 |
-| 3.6 | 补齐 `docs/ANIMATION_SPEC.md`、`docs/THEME_SPEC.md` |
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 3.1 | 动画状态表 + 状态机（`idle/sleep/walk/celebrate/interact/snap/drag`），优先级与一次性状态回落 | ✅ `renderer/pet/behavior.js` |
+| 3.2 | 定义 `pet.json` 皮肤包规范（`render` / `clips` / `sounds` / `colorMap`） | ✅ `docs/PET_SPEC.md` |
+| 3.3 | 皮肤校验与合并（`validatePetSkin` / `mergeClips`） | ✅ `renderer/pet/skin.js` |
+| 3.4 | 现有 SVG 猫改造为第一套内置皮肤（支持换色） | ⬜ 见下方说明 |
+| 3.5 | 把写死在元素上的无限动画改为状态类驱动 | ✅（见下） |
+| 3.6 | 补齐 `docs/ANIMATION_SPEC.md`、`docs/THEME_SPEC.md` | ⬜ 见下方说明 |
 
-**检测**：切换内置皮肤不闪烁；动作切换时"呼吸/睡觉"不再互相打架；`pet.json` 缺字段时有明确降级而不是白屏。
+**3.5 的做法与「默认值等于现状」原则**
+
+原先 4 个无限动画（呼吸 / 阴影脉动 / 眨眼 / 瞳孔移动）**直接写死在元素上、永远在跑**。
+一旦加入睡觉、走动、点击反馈，就会出现两个动画争抢同一个 transform
+（例如睡觉与呼吸同时缩放）。现在收敛到 `.pet-body.state-*` 状态类，
+同一时刻只有一个状态生效。
+
+关键取舍：`state-idle` 一条不差地**沿用**原先那四条动画（同样的时长与缓动），
+因此接入状态机不改变默认外观。其余状态才去覆盖它们（拖动/吸附时停掉呼吸，
+睡觉放慢到 5s，被点击播一次性 `pet-interact`）。
+
+**状态驱动来源**（谁把「正在发生的事」翻译成状态）：
+
+| 状态 | 驱动源 |
+| --- | --- |
+| `idle` | 默认；松手后、离开吸附后 |
+| `drag` | `interaction.onDragStateChange(true)`（优先级最高，可打断一切） |
+| `snap` | `onSnapEdgeChanged` / `onDockSnapChanged` → `syncSnapState()` |
+| `interact` | `interaction.onInteract`（按下桌宠时的一次性反馈，600ms 后回落） |
+| `walk` / `sleep` / `celebrate` | **仅定义了状态与视觉，暂无驱动源**（见下） |
+
+**明确未完成的部分（不夸大）**
+
+- **3.4 内置皮肤改造未做**：现有 SVG 猫的颜色仍写死在 SVG 属性上（`fill="#f5a623"`），
+  尚未改成 `var(--cat-*)` 引用，因此 `colorMap` 换色目前**只是规范、
+  没有实际生效**。规范第 7 节已写明换色需要「变量映射 + SVG 改用 var()」两步。
+- **3.3 只做了校验与合并，没有做文件系统加载器**：`userData/pets/` 扫描、
+  热切换、atlas 帧绘制属于阶段 8（商城导入导出）。当前 `skin.js` 是纯校验/合并逻辑，
+  可在 Node 里完整测试，正好作为阶段 8 的第一道闸。
+- **`walk` / `sleep` / `celebrate` 无驱动源**：`celebrate` 的自然触发点是
+  「上传成功」，但那需要 `quick-upload` 能力产出事件、壳层再驱动状态 ——
+  属于跨能力的接线，按「一个阶段一个主题」的原则留给后续，避免本阶段
+  同时改动能力层与动画层。
+
+**检测**：
+- 自检脚本 10 → **12 个**，断言 245 → **317 项**
+  （新增 `behavior.test.js` 31 项、`skin.test.js` 41 项）
+- `behavior.test.js` 覆盖：状态表完整性、优先级（高可打断低、低不得打断高）、
+  未知状态名拒绝、一次性状态到点回落、变化通知与订阅者异常隔离
+- `skin.test.js` 覆盖：致命问题 → `ok:false`（含循环引用不抛错）、
+  可自愈问题 → `ok:true` + warning、路径安全（绝对路径/`..`/协议前缀）、
+  未知状态名忽略、**皮肤不得覆盖 loop/duration/class**（否则一次性状态被改成循环，
+  状态机永远回落不到 idle）
+- `npm test` 12 个脚本全绿；`npm run lint` 全绿；`node --check` 45 个文件通过
+
+**提交**：`feat: 阶段3 桌宠动画状态机与 pet.json 皮肤格式`
 
 ---
 
@@ -406,7 +451,7 @@ if (!menuOpen && !quitOpen && !modalActive && !isDragging) enableClickThrough();
 ✅ 阶段 −1.5: fix: 阶段-1.5 修复文件列表陈旧与 Dock 失效图标无反馈              [38bc848]
 ✅ 阶段  0:  refactor: 阶段0 抽取共用 UI 原语（模态框/Toast）                   [6eda6a9]
 ✅ 阶段  1:  refactor: 抽出 quick-upload 能力并引入能力注册表                   [0861cba]
-   阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁
+✅ 阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁                               [733b907] [737c987]
    阶段  3:  feat: 桌宠动画状态机与皮肤包格式
    阶段  4:  fix: 重构吸附几何计算与锚点上报
    阶段  5:  refactor: 主进程按能力分家

@@ -99,6 +99,9 @@
       pendingDy = 0;
       setCursor(CURSOR_GRABBING); // 拖动期间锁定光标，避免与 hover 判定交替
       if (typeof opts.onClearOrientation === 'function') opts.onClearOrientation();
+      // 交互反馈（单击反馈动画）：先于拖动状态生效，若随后真的拖动，
+      // 会被更高优先级的 drag 状态打断 —— 优先级由状态机裁决
+      if (typeof opts.onInteract === 'function') opts.onInteract();
       // 通知主进程进入「手动拖动」：这期间必须完全停止自动吸附，
       // 否则松手前每一帧都会被拉回吸附位置（表现为吸附后拖不动、会弹回）
       if (typeof opts.onSnapRelease === 'function') opts.onSnapRelease();
