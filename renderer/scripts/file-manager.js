@@ -527,6 +527,19 @@ function renderFiles(files) {
   scheduleIconLoad();
 }
 
+/**
+ * 判断 target 是否等于 base 或位于 base 之下（大小写不敏感，兼容 / 与 \）。
+ * 用于 files-changed 事件判断"变化是否影响当前目录"，
+ * 之前的实现用字符串完全相等，导致子目录变化不刷新列表、界面残留已删除文件。
+ */
+function isSameOrSubPath(target, base) {
+  if (!target || !base) return false;
+  const norm = (p) => p.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase();
+  const t = norm(target);
+  const b = norm(base);
+  return t === b || t.startsWith(b + '\\');
+}
+
 async function loadFiles(dirPath) {
   const result = await window.electronAPI.listFiles(dirPath);
   if (result.success) {
@@ -541,7 +554,11 @@ async function loadFiles(dirPath) {
       window.electronAPI.syncCurrentPath(currentPath);
     }
   } else {
+    // 加载失败：立即清空列表与选中态，避免残留已失效的条目被继续操作
     fileList.innerHTML = '';
+    currentFiles = [];
+    currentPath = dirPath || '';
+    deleteBtn.disabled = true;
     emptyState.classList.add('active');
     emptyText.textContent = '加载失败：' + result.error;
   }
@@ -794,7 +811,50 @@ deleteBtn.addEventListener('click', async () => {
   const selectedItems = fileList.querySelectorAll('.file-item.selected');
   if (selectedItems.length === 0) return;
 
-  const paths = Array.from(selectedItems).map(el => el.dataset.path);
+  const selectedPaths = Array.from(selectedItems).map(el => el.dataset.path);
+
+  // 列表可能是陈旧的（外部删除/移动过文件），先校验存在性，
+  // 避免对已经不存在的文件弹出删除确认框
+  let paths = selectedPaths;
+  if (window.electronAPI.checkPathsExist) {
+    try {
+      const existResult = await window.electronAPI.checkPathsExist(selectedPaths);
+      if (existResult && existResult.success) {
+        paths = existResult.existing || [];
+        if (paths.length === 0) {
+          iconDataUrlCache.clear();
+          loadFiles(currentPath);
+          await showModal({
+            type: 'warning',
+            title: '文件已不存在',
+            message: '选中的条目在磁盘上已不存在（可能已被移动或删除），列表已刷新。',
+            buttons: [{ text: '确定', style: 'primary' }]
+          });
+          return;
+        }
+        if (paths.length < selectedPaths.length) {
+          // 部分失效：只对仍存在的部分继续，并提示数量差异
+          const skipped = selectedPaths.length - paths.length;
+          const proceed = await showModal({
+            type: 'warning',
+            title: '部分条目已不存在',
+            message: `选中的 ${selectedPaths.length} 个条目中有 ${skipped} 个已不存在，将跳过它们继续删除其余 ${paths.length} 个。`,
+            buttons: [
+              { text: '继续删除', style: 'danger' },
+              { text: '取消', style: 'secondary' }
+            ]
+          });
+          if (proceed !== 0) {
+            loadFiles(currentPath);
+            return;
+          }
+        }
+      }
+    } catch (_) {
+      // 校验失败时退回原有流程，不阻断删除
+    }
+  }
+
   const names = paths.map(p => p.split(/[\\/]/).pop());
   const choice = await showModal({
     type: 'warning',
@@ -809,25 +869,40 @@ deleteBtn.addEventListener('click', async () => {
   if (choice !== 0) return;
 
   let successCount = 0;
+  let missingCount = 0;
   let lastError = '';
   for (const p of paths) {
     const result = await window.electronAPI.deleteFile(p);
     if (result.success) {
       successCount++;
     } else {
-      lastError = result.error || '未知错误';
+      // 文件在列表加载后已被外部删除/移动：单独计数，提示更准确
+      if (result.error === '文件不存在') missingCount++;
+      else lastError = result.error || '未知错误';
     }
   }
 
-  if (successCount > 0) {
+  // 只要有为空的条目，就刷新列表，清掉界面上残留的失效文件
+  if (successCount > 0 || missingCount > 0) {
     iconDataUrlCache.clear();
     loadFiles(currentPath);
   }
-  if (successCount < paths.length) {
+
+  if (missingCount > 0 && lastError === '') {
+    await showModal({
+      type: 'warning',
+      title: '文件已不存在',
+      message: missingCount + ' 个条目在磁盘上已不存在（可能已被移动或删除），列表已刷新。',
+      buttons: [{ text: '确定', style: 'primary' }]
+    });
+  } else if (successCount < paths.length) {
+    const detail = missingCount > 0
+      ? `${missingCount} 个已不存在；`
+      : '';
     await showModal({
       type: 'error',
       title: '部分删除失败',
-      message: `${successCount}/${paths.length} 成功删除。错误：${lastError}`,
+      message: `${successCount}/${paths.length} 成功删除。${detail}错误：${lastError}`,
       buttons: [{ text: '确定', style: 'primary' }]
     });
   }
@@ -899,16 +974,13 @@ window.electronAPI.onFocusSearch(() => {
   searchInput.select();
 });
 
-// 文件变化时自动刷新（浮窗上传后通知）
+// 文件变化时自动刷新（浮窗上传/删除后通知）
 window.electronAPI.onFilesChanged((data) => {
-  if (data && data.dir) {
-    // 如果变化发生在当前路径或其子路径，刷新列表
-    const normalizedCurrent = currentPath.replace(/[\\/]+$/, '').toLowerCase();
-    const normalizedChanged = data.dir.replace(/[\\/]+$/, '').toLowerCase();
-    if (normalizedCurrent === normalizedChanged) {
-      iconDataUrlCache.clear();
-      loadFiles(currentPath);
-    }
+  if (!data || !data.dir || !currentPath) return;
+  // 变化发生在当前目录、其子目录，或当前目录的祖先（父目录内增删也会影响显示）时都刷新
+  if (isSameOrSubPath(data.dir, currentPath) || isSameOrSubPath(currentPath, data.dir)) {
+    iconDataUrlCache.clear();
+    loadFiles(currentPath);
   }
 });
 

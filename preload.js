@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   uploadFile: (data) => ipcRenderer.invoke('upload-file', data),
   uploadFolder: (data) => ipcRenderer.invoke('upload-folder', data),
   isDirectory: (filePath) => ipcRenderer.invoke('is-directory', filePath),
+  checkPathsExist: (paths) => ipcRenderer.invoke('check-paths-exist', paths),
   showMessageBox: (options) => ipcRenderer.invoke('show-message-box', options),
   listFiles: (dirPath) => ipcRenderer.invoke('list-files', dirPath),
   searchFiles: (keyword) => ipcRenderer.invoke('search-files', keyword),

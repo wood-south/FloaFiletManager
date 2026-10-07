@@ -2,7 +2,7 @@ const { ipcMain, dialog } = require('electron');
 const path = require('path');
 const guard = require('../security/guard');
 
-function register({ createFileManagerWindow, getFileManagerWindow, iconExtractor }) {
+function register({ createFileManagerWindow, getFileManagerWindow, iconExtractor, getDockWindow }) {
   const { parseUrlFile } = iconExtractor;
 
   ipcMain.handle('select-directory', async (event) => {
@@ -37,7 +37,23 @@ function register({ createFileManagerWindow, getFileManagerWindow, iconExtractor
   });
 
   ipcMain.handle('show-message-box', async (event, options) => {
-    const result = await dialog.showMessageBox(options);
+    const sender = guard.validateSender(event);
+    if (!sender.ok) return { response: 0 };
+    // 尽量以调用方所在窗口为父窗口：Dock 等置顶无边框窗口若不指定父窗口，
+    // 弹出的原生对话框可能被自身置顶窗口遮挡。
+    let parent = null;
+    try {
+      const { BrowserWindow } = require('electron');
+      const callerWin = BrowserWindow.fromWebContents(event.sender);
+      if (callerWin && !callerWin.isDestroyed()) parent = callerWin;
+      else if (typeof getDockWindow === 'function') {
+        const dockWin = getDockWindow();
+        if (dockWin && !dockWin.isDestroyed()) parent = dockWin;
+      }
+    } catch (_) {
+      parent = null;
+    }
+    const result = await dialog.showMessageBox(parent, options);
     return result;
   });
 

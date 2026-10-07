@@ -111,6 +111,7 @@ if (!gotTheLock) {
   ipcDialog.register({
     createFileManagerWindow: windows.createFileManagerWindow,
     getFileManagerWindow: windows.getFileManagerWindow,
+    getDockWindow: windows.getDockWindow,
     iconExtractor
   });
   ipcSystem.register({ loadConfig, saveConfig, getDockWindow: windows.getDockWindow });

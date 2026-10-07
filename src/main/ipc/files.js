@@ -113,6 +113,28 @@ function register({ loadConfig, getFileManagerWindow }) {
     }
   });
 
+  // 批量校验路径是否存在（供文件管理器在删除前过滤陈旧条目）
+  ipcMain.handle('check-paths-exist', (event, paths) => {
+    try {
+      const sender = guard.validateSender(event);
+      if (!sender.ok) return { success: false, error: sender.error };
+      if (!Array.isArray(paths)) return { success: true, existing: [] };
+
+      const roots = allowedRoots();
+      const existing = [];
+      for (const p of paths) {
+        if (typeof p !== 'string' || !p) continue;
+        if (!guard.isPathAllowed(p, roots)) continue;
+        try {
+          if (fs.existsSync(p)) existing.push(p);
+        } catch (_) {}
+      }
+      return { success: true, existing };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   // 判断路径是否为文件夹
   ipcMain.handle('is-directory', async (event, filePath) => {
     try {

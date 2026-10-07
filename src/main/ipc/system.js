@@ -205,13 +205,17 @@ function register({ loadConfig, saveConfig, getDockWindow }) {
       // 文件/文件夹/快捷方式 → openPath
       // openPath 会自动处理 .exe, .lnk, 文件等
       if (fs.existsSync(action)) {
-        shell.openPath(action);
+        const openResult = await shell.openPath(action);
+        if (openResult) {
+          // openPath 返回非空字符串即为系统给出的失败原因
+          return { success: false, error: openResult };
+        }
         return { success: true };
       }
 
-      // 路径可能不存在（被删除了），仍尝试openPath让系统处理
-      shell.openPath(action);
-      return { success: true };
+      // 路径已不存在（应用被卸载/文件被删除）：明确返回错误，由调用方给出反馈。
+      // 早期实现仍调用 openPath 并返回 success，导致点击失效图标毫无反应且无任何提示。
+      return { success: false, error: '目标已不存在', code: 'ENOENT' };
     } catch (e) {
       console.error('System action failed:', e.message);
       return { success: false, error: e.message };

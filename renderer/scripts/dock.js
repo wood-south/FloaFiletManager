@@ -80,6 +80,92 @@ setInterval(updateBattery, 30000);
 updateBattery();
 
 /* ========== 加载图标 ========== */
+/* ========== Dock 内提示（轻量 toast） ==========
+   用于启动失效图标、删除确认等反馈。Dock 窗口默认高度有限，
+   若嵌入窗口内会被裁剪，因此每帧同步把窗口临时向上扩展一段用于容纳提示。 */
+let dockToastEl = null;
+let dockToastTimer = null;
+let dockToastExpanded = false;
+
+function expandDockForToast() {
+  if (dockToastExpanded) return;
+  const win = document.getElementById('dockContainer');
+  if (!win || !window.electronAPI.expandDockWindow) return;
+  dockToastExpanded = true;
+  const rect = win.getBoundingClientRect();
+  // 在原高度基础上多留出提示条空间（约 40px：提示条高度 + 上下间距）
+  window.electronAPI.expandDockWindow(Math.ceil(rect.height) + 40).catch(() => {});
+}
+
+function collapseDockForToast() {
+  if (!dockToastExpanded) return;
+  dockToastExpanded = false;
+  if (window.electronAPI.restoreDockWindow) {
+    window.electronAPI.restoreDockWindow().catch(() => {});
+  }
+}
+
+function showDockToast(message, duration = 2600) {
+  if (dockToastTimer) clearTimeout(dockToastTimer);
+  if (dockToastEl) dockToastEl.remove();
+
+  expandDockForToast();
+
+  const el = document.createElement('div');
+  el.className = 'dock-toast';
+  el.textContent = message;
+  el.style.cssText = [
+    'position:absolute',
+    'left:50%',
+    'top:6px',
+    'transform:translateX(-50%)',
+    'max-width:420px',
+    'padding:7px 16px',
+    'border-radius:10px',
+    'background:rgba(28,28,32,0.94)',
+    'color:rgba(255,255,255,0.95)',
+    'font-size:12px',
+    'line-height:1.4',
+    'text-align:center',
+    'white-space:nowrap',
+    'overflow:hidden',
+    'text-overflow:ellipsis',
+    'box-shadow:0 6px 24px rgba(0,0,0,0.45)',
+    'border:1px solid rgba(255,255,255,0.14)',
+    'z-index:20000',
+    'pointer-events:none'
+  ].join(';');
+  (dockPanel ? dockPanel.parentElement : document.body).appendChild(el);
+  dockToastEl = el;
+
+  dockToastTimer = setTimeout(() => {
+    if (dockToastEl) {
+      dockToastEl.remove();
+      dockToastEl = null;
+    }
+    collapseDockForToast();
+  }, duration);
+}
+
+/* 弹出确认框（原生 MessageBox，父窗口为 Dock，始终位于最前） */
+async function confirmDockAction(message, detail) {
+  if (!window.electronAPI.showMessageBox) return true;
+  try {
+    const result = await window.electronAPI.showMessageBox({
+      type: 'warning',
+      buttons: ['取消', '删除'],
+      defaultId: 1,
+      cancelId: 0,
+      title: 'Dock',
+      message,
+      detail
+    });
+    return result && result.response === 1;
+  } catch (_) {
+    return true;
+  }
+}
+
 async function loadNavItems() {
   if (!dockItems) return;
   navItems = await window.electronAPI.getNavItems();
@@ -134,11 +220,23 @@ async function renderNavItems() {
           el.innerHTML = NAV_ICONS.default;
         }
         // 绑定点击事件打开应用
-        el.addEventListener('click', (e) => {
+        el.addEventListener('click', async (e) => {
           e.stopPropagation();
           const path = el.dataset.navPath;
-          if (path && window.electronAPI) {
-            window.electronAPI.systemAction(path);
+          if (!path || !window.electronAPI) return;
+          try {
+            const result = await window.electronAPI.systemAction(path);
+            // 目标已被删除/卸载时给出明确反馈，而不是静默无反应
+            if (result && result.success === false) {
+              const name = (el.querySelector('img') && el.querySelector('img').alt) || '该图标';
+              if (result.code === 'ENOENT') {
+                showDockToast(`无法启动「${name}」：目标已不存在，可右键移除此图标`);
+              } else {
+                showDockToast(`无法启动「${name}」：${result.error || '未知错误'}`);
+              }
+            }
+          } catch (err) {
+            showDockToast('启动失败：' + (err && err.message ? err.message : '未知错误'));
           }
         });
       }
@@ -1021,8 +1119,25 @@ function showContextMenu(x, y, itemId) {
       const result = await window.electronAPI.updateNavItem(itemId, { visible: false });
       if (result.success) { navItems = result.items; await renderNavItems(); }
     } else if (action === 'remove') {
+      // 删除图标不可撤销，先确认，避免右键误点直接丢失配置
+      const target = navItems.find(i => i.id === itemId);
+      const name = (target && target.name) || '此图标';
+      const confirmed = await confirmDockAction(
+        `确定要从 Dock 栏移除「${name}」吗？`,
+        '移除后需重新拖拽该应用或文件才能恢复。'
+      );
+      if (!confirmed) {
+        closeContextMenu(menu);
+        return;
+      }
       const result = await window.electronAPI.removeNavItem(itemId);
-      if (result.success) { navItems = result.items; await renderNavItems(); }
+      if (result.success) {
+        navItems = result.items;
+        await renderNavItems();
+        showDockToast(`已移除「${name}」`);
+      } else {
+        showDockToast('移除失败：' + ((result && result.error) || '未知错误'));
+      }
     }
     closeContextMenu(menu);
   };
