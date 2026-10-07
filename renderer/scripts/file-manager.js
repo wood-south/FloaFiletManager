@@ -12,7 +12,6 @@ const emptyText = document.getElementById('emptyText');
 const pathText = document.getElementById('pathText');
 const fileCount = document.getElementById('fileCount');
 const deleteBtn = document.getElementById('deleteBtn');
-const fmPanel = document.getElementById('fmPanel');
 const modalOverlay = document.getElementById('modalOverlay');
 const modalIcon = document.getElementById('modalIcon');
 const modalTitle = document.getElementById('modalTitle');
@@ -27,10 +26,23 @@ let searchTimeout = null;
 
 // 自定义模态框
 const ICONS = {
+  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M8 12.5l2.5 2.5L16 9.5"></path></svg>',
   warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
   question: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>',
   error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
 };
+
+// 图标缓存键：快捷方式按完整路径区分，其余按「带点的扩展名」复用（无扩展名为 'file'）
+// 必须与主进程 src/main/ipc/icons.js 的 getIconCacheKey 严格一致，
+// 否则 'icon-updated' 通知与本地缓存对不上（磁盘上的 icon-cache.json 也用此格式）
+function getIconCacheKeyByName(name, filePath) {
+  const lower = String(name || '').toLowerCase();
+  if (lower.endsWith('.lnk') || lower.endsWith('.url')) {
+    return String(filePath || '').toLowerCase();
+  }
+  const dot = lower.lastIndexOf('.');
+  return dot > 0 ? lower.slice(dot) : 'file';
+}
 
 function showModal({ type = 'question', title, message, buttons }) {
   return new Promise((resolve) => {
@@ -258,7 +270,7 @@ function getFileIcon(name, isDirectory, targetIsDirectory) {
 function renderFiles(files) {
   currentFiles = files;
   fileList.innerHTML = '';
-  
+
   iconLoadQueue.length = 0;
   iconLoading = false;
 
@@ -313,7 +325,7 @@ function renderFiles(files) {
       </div>
     `;
 
-    item.addEventListener('dblclick', (e) => {
+    item.addEventListener('dblclick', () => {
       if (file.isDirectory) {
         loadFiles(file.path);
       } else {
@@ -386,7 +398,7 @@ function renderFiles(files) {
       }
     });
 
-    item.addEventListener('dragleave', (e) => {
+    item.addEventListener('dragleave', () => {
       item.classList.remove('drop-target');
     });
 
@@ -488,9 +500,7 @@ function renderFiles(files) {
     frag.appendChild(item);
 
     if (!file.isDirectory) {
-      const iconKey = file.name.toLowerCase().endsWith('.lnk') || file.name.toLowerCase().endsWith('.url') 
-        ? file.path.replace(/\\/g, '\\\\').toLowerCase() 
-        : (file.name.split('.').pop() || '').toLowerCase();
+      const iconKey = getIconCacheKeyByName(file.name, file.path);
       const iconEl = item.querySelector('.file-icon');
       if (iconDataUrlCache.has(iconKey)) {
         const dataUrl = iconDataUrlCache.get(iconKey);
@@ -656,7 +666,7 @@ uploadDropdownItems.forEach(item => {
   item.addEventListener('click', async () => {
     uploadDropdownMenu.classList.remove('active');
     const action = item.dataset.action;
-    
+
     if (action === 'file') {
       const input = document.createElement('input');
       input.type = 'file';
@@ -874,19 +884,22 @@ viewBtns.forEach(btn => {
 });
 
 window.electronAPI.onIconUpdated((data) => {
-  const { filePath, iconDataUrl } = data;
-  const iconKey = filePath.replace(/\\/g, '\\\\').toLowerCase();
+  if (!data) return;
+  const { filePath: iconKey, iconDataUrl } = data;
+  if (!iconKey || !iconDataUrl) return;
   iconDataUrlCache.set(iconKey, iconDataUrl);
-  // 更新所有匹配的文件图标
+  // 增量更新：只替换命中的图标，不再整批清空缓存重新拉取
   const items = document.querySelectorAll('.file-item');
   items.forEach(item => {
     const dataPath = item.dataset.path;
-    if (dataPath && dataPath.toLowerCase() === iconKey) {
-      const iconEl = item.querySelector('.file-icon');
-      if (iconEl) {
-        iconEl.innerHTML = `<img src="${iconDataUrl}" alt="">`;
-        iconEl.style.background = 'transparent';
-      }
+    const nameEl = item.querySelector('.file-name');
+    if (!dataPath || !nameEl) return;
+    if (getIconCacheKeyByName(nameEl.textContent, dataPath) !== iconKey) return;
+    const iconEl = item.querySelector('.file-icon');
+    if (iconEl) {
+      iconEl.innerHTML = `<img src="${iconDataUrl}" alt="">`;
+      iconEl.style.background = 'transparent';
+      iconEl.classList.remove('loading');
     }
   });
 });
@@ -1008,9 +1021,11 @@ function renderPartitions() {
       div.addEventListener('click', () => {
         loadFiles(item.path);
       });
-      // 路径项拖拽：携带来源分区ID和路径索引
+      // 路径项拖拽：携带来源分区ID和路径索引，同时携带路径文本以便拖到 Dock
       div.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('text/x-path-item', JSON.stringify({ fromPartitionId: partition.id, pathIndex }));
+        const payload = { fromPartitionId: partition.id, pathIndex, path: item.path, name: item.name };
+        e.dataTransfer.setData('text/x-path-item', JSON.stringify(payload));
+        e.dataTransfer.setData('text/plain', JSON.stringify(payload));
         e.dataTransfer.effectAllowed = 'move';
         div.classList.add('dragging');
       });
@@ -1173,7 +1188,28 @@ async function handleContextMenuAction(menuId, action) {
       const pathItem = partition && partition.paths && partition.paths[pIdx];
       if (!pathItem) return;
 
-      if (action === 'setPreferred') {
+      if (action === 'addToDock') {
+        const result = await window.electronAPI.addNavItem({
+          name: pathItem.name,
+          path: pathItem.path,
+          type: 'application'
+        });
+        if (result && result.success) {
+          await showModal({
+            type: 'success',
+            title: '已添加',
+            message: `已将 "${pathItem.name}" 添加到 Dock 栏`,
+            buttons: [{ text: '确定', style: 'primary' }]
+          });
+        } else {
+          await showModal({
+            type: 'error',
+            title: '添加失败',
+            message: (result && result.error) || '该路径可能已存在于 Dock 栏',
+            buttons: [{ text: '确定', style: 'primary' }]
+          });
+        }
+      } else if (action === 'setPreferred') {
         const result = await window.electronAPI.setPreferredPath(pathItem.path);
         if (result.success) {
           preferredPath = pathItem.path;

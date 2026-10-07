@@ -1,111 +1,45 @@
-const { ipcMain } = require('electron');
+const { ipcMain, BrowserWindow } = require('electron');
 const path = require('path');
-const fs = require('fs');
+
+// 计算图标缓存键：快捷方式(.lnk/.url)按完整路径区分，其余按扩展名复用
+// 必须与渲染进程 renderer/scripts/file-manager.js 的 getIconCacheKeyByName 保持一致
+function getIconCacheKey(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.lnk' || ext === '.url') {
+    return filePath.toLowerCase();
+  }
+  return ext || 'file';
+}
+
+// 图标提取完成后通知各渲染窗口增量更新，避免整批清空缓存后重新拉取
+function broadcastIconUpdated(cacheKey, dataUrl) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('icon-updated', { filePath: cacheKey, iconDataUrl: dataUrl });
+    }
+  }
+}
 
 function register({ iconCache, scheduleSaveIconCache, iconExtractor }) {
-  const {
-    resolveLnkTarget,
-    parseUrlFile,
-    cleanPath,
-    readIcoToDataUrl,
-    getSteamGameIcon,
-    getFileIconWithTimeout,
-    iconToDataUrl,
-    resolveFileIcon
-  } = iconExtractor;
-
-  ipcMain.handle('helper-native-get-file-icon', async (event, filePath, isDirectory) => {
-    try {
-      if (isDirectory) return null;
-
-      const ext = path.extname(filePath).toLowerCase();
-      const isLnk = ext === '.lnk';
-      const isUrl = ext === '.url';
-      let result = null;
-      let iconFile = filePath;
-
-      if (isLnk) {
-        const targetPath = resolveLnkTarget(filePath);
-        if (targetPath) {
-          iconFile = targetPath;
-        }
-      }
-
-      if (isUrl) {
-        const urlInfo = parseUrlFile(filePath);
-        if (urlInfo.iconFile) {
-          const p = cleanPath(urlInfo.iconFile);
-          if (p && fs.existsSync(p)) {
-            const e = path.extname(p).toLowerCase();
-            if (e === '.ico') { result = readIcoToDataUrl(p); }
-            else if (['.jpg','.jpeg','.png','.gif','.bmp','.webp'].includes(e)) {
-              try {
-                const buf = fs.readFileSync(p);
-                result = 'data:' + (e==='.jpg'?'image/jpeg':'image/'+e.slice(1)) + ';base64,' + buf.toString('base64');
-              } catch (er) { console.error('url图标读取失败:', er.message); }
-            } else {
-              iconFile = p;
-            }
-          }
-        }
-        if (!result && urlInfo.url && urlInfo.url.startsWith('steam://')) {
-          const si = getSteamGameIcon(urlInfo.url);
-          if (si) {
-            const se = path.extname(si).toLowerCase();
-            if (se === '.ico') result = readIcoToDataUrl(si);
-            else {
-              try {
-                const buf = fs.readFileSync(si);
-                result = 'data:' + (se==='.jpg'?'image/jpeg':'image/'+se.slice(1)) + ';base64,' + buf.toString('base64');
-              } catch (er) { console.error('Steam图标读取失败:', er.message); }
-            }
-          }
-        }
-      }
-
-      if (!result) {
-        try {
-          const icon = await getFileIconWithTimeout(iconFile, 3000);
-          if (icon) {
-            result = iconToDataUrl(icon);
-          }
-        } catch (e) {
-          console.error('getFileIcon失败:', e.message);
-        }
-      }
-
-      if (!result) {
-        result = extractIconToDataUrl(iconFile);
-        if (result) {
-          console.log('PowerShell提取图标成功:', filePath);
-        }
-      }
-
-      return result;
-    } catch (e) {
-      console.error('helper获取图标失败:', e.message);
-      return null;
-    }
-  });
+  const { resolveFileIcon } = iconExtractor;
 
   ipcMain.handle('get-file-icon', async (event, filePath, isDirectory) => {
     try {
       if (isDirectory) return null;
 
-      const ext = path.extname(filePath).toLowerCase();
-      const isLnk = ext === '.lnk';
-      const isUrl = ext === '.url';
-
-      const cacheKey = (isLnk || isUrl) ? filePath.toLowerCase() : (ext || 'file');
+      const cacheKey = getIconCacheKey(filePath);
 
       if (iconCache.has(cacheKey)) {
         return iconCache.get(cacheKey);
       }
 
+      // resolveFileIcon 内部已包含完整回退链：
+      // 快捷方式/.url 解析 → PowerShell + SHGetFileInfo → Electron app.getFileIcon
       const result = await resolveFileIcon(filePath);
       if (result) {
         iconCache.set(cacheKey, result);
         scheduleSaveIconCache();
+        broadcastIconUpdated(cacheKey, result);
       }
       return result;
     } catch (e) {

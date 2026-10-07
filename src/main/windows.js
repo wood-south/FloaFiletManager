@@ -1,25 +1,41 @@
-const { BrowserWindow, screen, ipcMain } = require('electron');
+const { BrowserWindow, screen } = require('electron');
 const path = require('path');
 const { loadConfig, rootDir } = require('./config');
 
 let floatWindow = null;
 let fileManagerWindow = null;
-let iconHelperWindow = null;
 let dockWindow = null;
+let settingsWindow = null;
 let alwaysOnTopEnabled = true;
-
-let iconHelperReady = false;
-let iconHelperPending = [];
-const iconRequestMap = new Map();
+let dockAlwaysOnTopEnabled = true;
+let dockVisible = true;
 
 function getFloatWindow() { return floatWindow; }
 function getFileManagerWindow() { return fileManagerWindow; }
-function getIconHelperWindow() { return iconHelperWindow; }
 function getDockWindow() { return dockWindow; }
+function getSettingsWindow() { return settingsWindow; }
 function getAlwaysOnTopEnabled() { return alwaysOnTopEnabled; }
 function setAlwaysOnTopEnabled(val) { alwaysOnTopEnabled = val; }
-function getIconHelperReady() { return iconHelperReady; }
-function getIconRequestMap() { return iconRequestMap; }
+function getDockAlwaysOnTopEnabled() { return dockAlwaysOnTopEnabled; }
+function setDockAlwaysOnTopEnabled(val) {
+  dockAlwaysOnTopEnabled = val;
+  if (dockWindow && !dockWindow.isDestroyed()) {
+    if (val) {
+      dockWindow.setAlwaysOnTop(true, 'screen-saver');
+    } else {
+      dockWindow.setAlwaysOnTop(false);
+    }
+  }
+}
+function getDockVisible() { return dockVisible; }
+
+// 从配置加载持久化状态
+function loadPersistedState() {
+  const config = loadConfig();
+  alwaysOnTopEnabled = config.floatAlwaysOnTop !== false;
+  dockAlwaysOnTopEnabled = config.dockAlwaysOnTop !== false;
+  dockVisible = config.dockVisible !== false;
+}
 
 function createFloatWindow() {
   const config = loadConfig();
@@ -53,7 +69,7 @@ function createFloatWindow() {
     }
   });
 
-  floatWindow.setAlwaysOnTop(true, 'screen-saver');
+  floatWindow.setAlwaysOnTop(alwaysOnTopEnabled, 'screen-saver');
   floatWindow.setVisibleOnAllWorkspaces(true);
   floatWindow.loadFile(path.join(rootDir, 'renderer', 'float.html'));
 
@@ -116,41 +132,6 @@ function createFileManagerWindow() {
   });
 }
 
-function createIconHelperWindow() {
-  if (iconHelperWindow) return;
-  iconHelperWindow = new BrowserWindow({
-    show: false,
-    width: 100,
-    height: 100,
-    frame: false,
-    transparent: false,
-    backgroundColor: '#000000',
-    skipTaskbar: true,
-    alwaysOnTop: false,
-    focusable: false,
-    x: -1000,
-    y: -1000,
-    webPreferences: {
-      preload: path.join(rootDir, 'renderer', 'icon-helper-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      offscreen: false
-    }
-  });
-  iconHelperWindow.loadFile(path.join(rootDir, 'renderer', 'icon-helper.html'));
-  iconHelperWindow.webContents.on('did-finish-load', () => {
-    iconHelperReady = true;
-    for (const item of iconHelperPending) {
-      iconHelperWindow.webContents.send('helper-get-file-icon', item.requestId, item.filePath, item.isDirectory);
-    }
-    iconHelperPending = [];
-  });
-  iconHelperWindow.on('closed', () => {
-    iconHelperWindow = null;
-    iconHelperReady = false;
-  });
-}
-
 function createDockWindow() {
   if (dockWindow && !dockWindow.isDestroyed()) {
     dockWindow.focus();
@@ -160,13 +141,32 @@ function createDockWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { workArea } = primaryDisplay;
   const dockWidth = 800;
-  const dockHeight = 90;
+  // 初始窗口足够大，内容加载后自动适配
+  const dockHeight = 200;
+  // 读取持久化的位置（基于底部锚点），如果没有则底部居中
+  const cfg = loadConfig();
+  let dockX, dockY;
+  const hasSaved = cfg.dockX !== null && cfg.dockX !== undefined &&
+    cfg.dockBottom !== null && cfg.dockBottom !== undefined;
+  if (hasSaved) {
+    dockX = cfg.dockX;
+    dockY = cfg.dockBottom - dockHeight;
+    // 边界保护：保存的位置超出屏幕则回退到底部居中
+    if (dockX + dockWidth < workArea.x || dockX > workArea.x + workArea.width ||
+        dockY < workArea.y || dockY + dockHeight > workArea.y + workArea.height + 60) {
+      dockX = Math.round(workArea.x + (workArea.width - dockWidth) / 2);
+      dockY = workArea.height - dockHeight + 20;
+    }
+  } else {
+    dockX = Math.round(workArea.x + (workArea.width - dockWidth) / 2);
+    dockY = workArea.height - dockHeight + 20;
+  }
 
   dockWindow = new BrowserWindow({
     width: dockWidth,
     height: dockHeight,
-    x: Math.round(workArea.x + (workArea.width - dockWidth) / 2),
-    y: workArea.height - dockHeight + 20,
+    x: dockX,
+    y: dockY,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -182,9 +182,18 @@ function createDockWindow() {
     }
   });
 
-  dockWindow.setAlwaysOnTop(true, 'screen-saver');
+  dockWindow.setAlwaysOnTop(dockAlwaysOnTopEnabled, 'screen-saver');
   dockWindow.setVisibleOnAllWorkspaces(true);
   dockWindow.loadFile(path.join(rootDir, 'renderer', 'dock.html'));
+
+  // DWM 桌面模糊：CSS backdrop-filter 无法在透明窗口中模糊桌面，
+  // 必须用 OS 级 setBackgroundMaterial 实现。acrylic 提供 Win10+ 亚克力桌面模糊。
+  const applyDwmBlur = () => {
+    if (process.platform !== 'win32' || !dockWindow || dockWindow.isDestroyed()) return;
+    try { dockWindow.setBackgroundMaterial('acrylic'); } catch (_) {}
+  };
+  dockWindow.webContents.on('did-finish-load', applyDwmBlur);
+  dockWindow.on('show', applyDwmBlur);
 
   dockWindow.on('closed', () => {
     dockWindow = null;
@@ -211,56 +220,88 @@ function hideDockWindow() {
 function toggleDockWindow() {
   if (dockWindow && !dockWindow.isDestroyed() && dockWindow.isVisible()) {
     hideDockWindow();
+    dockVisible = false;
+    savePersistedState();
     return false;
   } else {
     showDockWindow();
+    dockVisible = true;
+    savePersistedState();
     return true;
   }
 }
 
-function requestIconFromHelper(filePath, isDirectory) {
-  return new Promise((resolve) => {
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const timer = setTimeout(() => {
-      iconRequestMap.delete(requestId);
-      resolve(null);
-    }, 5000);
-    iconRequestMap.set(requestId, (dataUrl) => {
-      clearTimeout(timer);
-      resolve(dataUrl);
-    });
-    if (iconHelperReady && iconHelperWindow && !iconHelperWindow.isDestroyed()) {
-      iconHelperWindow.webContents.send('helper-get-file-icon', requestId, filePath, isDirectory);
-    } else {
-      iconHelperPending.push({ requestId, filePath, isDirectory });
-      if (!iconHelperWindow) createIconHelperWindow();
-    }
-  });
+function savePersistedState() {
+  try {
+    const { saveConfig } = require('./config');
+    const config = loadConfig();
+    config.dockVisible = dockVisible;
+    config.floatAlwaysOnTop = alwaysOnTopEnabled;
+    config.dockAlwaysOnTop = dockAlwaysOnTopEnabled;
+    saveConfig(config);
+  } catch (e) {
+    console.error('保存窗口状态失败:', e);
+  }
 }
 
-ipcMain.on('helper-return-file-icon', (event, requestId, dataUrl) => {
-  const resolve = iconRequestMap.get(requestId);
-  if (resolve) {
-    iconRequestMap.delete(requestId);
-    resolve(dataUrl);
+function createSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.focus();
+    return settingsWindow;
   }
-});
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { workArea } = primaryDisplay;
+  const w = 440;
+  const h = 560;
+
+  settingsWindow = new BrowserWindow({
+    width: w,
+    height: h,
+    x: Math.round(workArea.x + (workArea.width - w) / 2),
+    y: Math.round(workArea.y + (workArea.height - h) / 2),
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(rootDir, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  settingsWindow.setAlwaysOnTop(true, 'screen-saver');
+  settingsWindow.loadFile(path.join(rootDir, 'renderer', 'settings.html'));
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+  });
+
+  return settingsWindow;
+}
 
 module.exports = {
   createFloatWindow,
   createFileManagerWindow,
-  createIconHelperWindow,
   createDockWindow,
   showDockWindow,
   hideDockWindow,
   toggleDockWindow,
-  requestIconFromHelper,
+  createSettingsWindow,
   getFloatWindow,
   getFileManagerWindow,
-  getIconHelperWindow,
   getDockWindow,
+  getSettingsWindow,
   getAlwaysOnTopEnabled,
   setAlwaysOnTopEnabled,
-  getIconHelperReady,
-  getIconRequestMap
+  getDockAlwaysOnTopEnabled,
+  setDockAlwaysOnTopEnabled,
+  getDockVisible,
+  loadPersistedState
 };

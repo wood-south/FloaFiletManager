@@ -8,9 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeFileManager: () => ipcRenderer.invoke('close-file-manager'),
   openThisComputer: () => ipcRenderer.invoke('open-this-computer'),
   getQuickAccess: () => ipcRenderer.invoke('get-quick-access'),
-  addQuickAccess: (item) => ipcRenderer.invoke('add-quick-access', item),
-  updateQuickAccess: (index, item) => ipcRenderer.invoke('update-quick-access', { index, item }),
-  removeQuickAccess: (index) => ipcRenderer.invoke('remove-quick-access', index),
   getPartitions: () => ipcRenderer.invoke('get-partitions'),
   addPartition: (name) => ipcRenderer.invoke('add-partition', { name }),
   updatePartition: (partitionId, name) => ipcRenderer.invoke('update-partition', { partitionId, name }),
@@ -33,9 +30,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   moveWindow: (deltaX, deltaY) => ipcRenderer.invoke('move-window', deltaX, deltaY),
   saveWindowPosition: () => ipcRenderer.invoke('save-window-position'),
   getWindowBounds: () => ipcRenderer.invoke('get-window-bounds'),
+  getDockBounds: () => ipcRenderer.invoke('get-dock-bounds'),
+  reportDockPanelOffset: (offset) => ipcRenderer.invoke('report-dock-panel-offset', offset),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top'),
   getAlwaysOnTop: () => ipcRenderer.invoke('get-always-on-top'),
+  toggleDockAlwaysOnTop: () => ipcRenderer.invoke('toggle-dock-always-on-top'),
+  getDockAlwaysOnTop: () => ipcRenderer.invoke('get-dock-always-on-top'),
   focusSearch: () => ipcRenderer.invoke('focus-search'),
   onFocusSearch: (callback) => {
     ipcRenderer.on('focus-search', callback);
@@ -49,6 +50,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSnapEdgeChanged: (callback) => {
     ipcRenderer.on('snap-edge-changed', (event, edge) => callback(edge));
   },
+  onDockSnapChanged: (callback) => {
+    ipcRenderer.on('dock-snap-changed', (event, side) => callback(side));
+  },
   unsnapWindow: () => ipcRenderer.invoke('unsnap-window'),
   resnapWindow: () => ipcRenderer.invoke('resnap-window'),
   expandFloatWindow: (width, height) => ipcRenderer.invoke('expand-float-window', width, height),
@@ -60,6 +64,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startDrag: (filePath, iconDataUrl) => ipcRenderer.invoke('start-drag', { filePath, iconDataUrl }),
   systemAction: (action) => ipcRenderer.invoke('system-action', action),
   toggleTaskbar: (hide) => ipcRenderer.invoke('toggle-taskbar', hide),
+  getTaskbarHidden: () => ipcRenderer.invoke('get-taskbar-hidden'),
+  // 桌面图标显示/隐藏
+  toggleDesktopIcons: () => ipcRenderer.invoke('toggle-desktop-icons'),
+  getDesktopIconsHidden: () => ipcRenderer.invoke('get-desktop-icons-hidden'),
+  getBatteryStatus: () => ipcRenderer.invoke('get-battery-status'),
+  // 音量控制
+  getVolume: () => ipcRenderer.invoke('get-volume'),
+  setVolume: (volume) => ipcRenderer.invoke('set-volume', volume),
+  toggleMute: () => ipcRenderer.invoke('toggle-mute'),
+  setMute: (mute) => ipcRenderer.invoke('set-mute', mute),
+  // WiFi 控制
+  getWifiStatus: () => ipcRenderer.invoke('get-wifi-status'),
+  getWifiNetworks: () => ipcRenderer.invoke('get-wifi-networks'),
+  connectWifi: (ssid) => ipcRenderer.invoke('connect-wifi', ssid),
+  disconnectWifi: () => ipcRenderer.invoke('disconnect-wifi'),
+  // 网络状态（有线+无线）
+  getNetworkStatus: () => ipcRenderer.invoke('get-network-status'),
+  // Dock 窗口扩展/恢复（用于显示音量/WiFi浮层）
+  expandDockWindow: (height) => ipcRenderer.invoke('expand-dock-window', height),
+  restoreDockWindow: () => ipcRenderer.invoke('restore-dock-window'),
+  resizeDockWindow: (width, height) => ipcRenderer.invoke('resize-dock-window', width, height),
+  // 电源操作
+  powerAction: (action) => ipcRenderer.invoke('power-action', action),
   getNavItems: () => ipcRenderer.invoke('get-nav-items'),
   saveNavItems: (items) => ipcRenderer.invoke('save-nav-items', items),
   addNavItem: (item) => ipcRenderer.invoke('add-nav-item', item),
@@ -68,7 +95,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleDock: () => ipcRenderer.invoke('toggle-dock'),
   showDock: () => ipcRenderer.invoke('show-dock'),
   hideDock: () => ipcRenderer.invoke('hide-dock'),
+  getDockVisible: () => ipcRenderer.invoke('get-dock-visible'),
   moveDock: (deltaX, deltaY) => ipcRenderer.invoke('move-dock', deltaX, deltaY),
   getDockSettings: () => ipcRenderer.invoke('get-dock-settings'),
-  saveDockSettings: (settings) => ipcRenderer.invoke('save-dock-settings', settings)
+  saveDockSettings: (settings) => ipcRenderer.invoke('save-dock-settings', settings),
+  openSettings: () => ipcRenderer.invoke('open-settings'),
+  closeSettings: () => ipcRenderer.invoke('close-settings'),
+  applyDockStyle: (style) => ipcRenderer.invoke('apply-dock-style', style),
+  moveSettings: (dx, dy) => ipcRenderer.invoke('move-settings', dx, dy),
+  resetDockPos: () => ipcRenderer.invoke('reset-dock-pos'),
+  centerDock: () => ipcRenderer.invoke('center-dock'),
+  openConfigFolder: () => ipcRenderer.invoke('open-config-folder'),
+  onDockStyleChanged: (callback) => {
+    ipcRenderer.on('dock-style-changed', (event, style) => callback(style));
+  },
+  onNavItemsChanged: (callback) => {
+    ipcRenderer.on('nav-items-changed', () => callback());
+  },
+  // 点击穿透：透明区域允许鼠标穿透到桌面
+  setIgnoreMouseEvents: (ignore, opts) => ipcRenderer.invoke('set-ignore-mouse-events', { ignore, opts })
 });

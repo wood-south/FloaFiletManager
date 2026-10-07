@@ -1,9 +1,22 @@
 const { app, screen } = require('electron');
 const fs = require('fs');
+const { execSync } = require('child_process');
+
+function restoreTaskbar() {
+  try {
+    const script = `Add-Type -Namespace W -Name T -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr FindWindow(string c, string n); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);'
+$h = [W.T]::FindWindow("Shell_TrayWnd", $null)
+if ($h -ne [IntPtr]::Zero) { [W.T]::ShowWindow($h, 5) }`;
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    execSync(`powershell -NoProfile -EncodedCommand ${encoded}`, { timeout: 4000 });
+  } catch (_) {}
+}
 
 process.on('uncaughtException', (err) => {
+  // 这两个异常来自 Electron 自身的已知噪音（快捷方式解析、NOTREACHED），直接忽略
   if (err.message && err.message.includes('shortcut link')) return;
   if (err.message && err.message.includes('NOTREACHED')) return;
+  console.error('未捕获异常:', err);
 });
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -56,23 +69,27 @@ if (!gotTheLock) {
       fs.mkdirSync(config.savePath, { recursive: true });
     }
     loadIconCache();
-    windows.createIconHelperWindow();
+    // 从配置恢复持久化状态
+    windows.loadPersistedState();
     windows.createFloatWindow();
+    // 如果上次 Dock 可见，启动时恢复显示
+    if (windows.getDockVisible()) {
+      windows.showDockWindow();
+    }
+    // 注意：音量控制 dll 改为首次使用时再按需编译（见 system.js），
+    // 不在启动时运行 csc.exe，避免触发杀毒软件对「运行时编译代码」的启发式拦截导致启动卡顿/CPU 占满。
   });
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
       saveIconCache();
-      const iconHelperWindow = windows.getIconHelperWindow();
-      if (iconHelperWindow && !iconHelperWindow.isDestroyed()) {
-        iconHelperWindow.destroy();
-      }
       app.quit();
     }
   });
 
   app.on('will-quit', () => {
     saveIconCache();
+    restoreTaskbar();
   });
 
   // 注册 IPC handlers
@@ -87,12 +104,14 @@ if (!gotTheLock) {
     getFloatWindow: windows.getFloatWindow,
     getFileManagerWindow: windows.getFileManagerWindow,
     getAlwaysOnTopEnabled: windows.getAlwaysOnTopEnabled,
-    setAlwaysOnTopEnabled: windows.setAlwaysOnTopEnabled
+    setAlwaysOnTopEnabled: windows.setAlwaysOnTopEnabled,
+    getDockAlwaysOnTopEnabled: windows.getDockAlwaysOnTopEnabled,
+    setDockAlwaysOnTopEnabled: windows.setDockAlwaysOnTopEnabled
   });
   ipcDialog.register({
     createFileManagerWindow: windows.createFileManagerWindow,
     getFileManagerWindow: windows.getFileManagerWindow,
     iconExtractor
   });
-  ipcSystem.register({ loadConfig, saveConfig });
+  ipcSystem.register({ loadConfig, saveConfig, getDockWindow: windows.getDockWindow });
 }
