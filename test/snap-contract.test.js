@@ -130,6 +130,23 @@ ok('视觉框用 SVG getBBox + getScreenCTM 测量真实画面（而非容器 90
   // 必须仍保留回退，避免 getBBox 抛错时完全没有锚点
   assert.ok(/getBoundingClientRect\(\)/.test(body), '缺少回退路径');
 });
+ok('地面阴影对四边等量内缩（左右下上也消除间隙）', () => {
+  const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  const start = floatSrc.indexOf('function readPetAnchor(');
+  const end = floatSrc.indexOf('\n}\n', start);
+  const body = floatSrc.slice(start, end);
+  assert.ok(/readShadowInset\(/.test(body), '未按阴影尺寸内缩');
+  // 必须是四边都缩，而不是只收底边（只收底边会导致左/右/下有间隙）
+  ['left += inset', 'top += inset', 'width -= inset * 2', 'height -= inset * 2']
+    .forEach((frag) => {
+      assert.ok(body.includes(frag), '缺少四边内缩语句: ' + frag);
+    });
+  const insetStart = floatSrc.indexOf('function readShadowInset(');
+  const insetEnd = floatSrc.indexOf('\n}\n', insetStart);
+  const insetBody = floatSrc.slice(insetStart, insetEnd);
+  assert.ok(/\.pet-shadow/.test(insetBody), '未定位阴影元素');
+  assert.ok(/Math\.min\(/.test(insetBody), '缺少「取较小映射量」的保护，可能内缩过度');
+});
 
 console.log('\n[5] 拖动窗口移动合并到每帧一次（修复拖动闪动）');
 [['float.js', 'moveWindow'], ['dock.js', 'moveDock']].forEach(([file, api]) => {

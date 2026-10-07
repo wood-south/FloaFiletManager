@@ -502,13 +502,16 @@ let anchorLastReport = null;
  * 读取宠物的**真实视觉框**（相对窗口左上角）。
  *
  * 关键点一：不能用 `.pet-avatar` 的 getBoundingClientRect() —— 它是 90×90 的容器，
- * 而 SVG 内容在 100×100 viewBox 中只占一部分，容器四周留有空边。
+ * 而 SVG 内容只占其中一部分，容器四周留有空边。
  * 因此用 SVG 的 getBBox()（用户单位）经 getScreenCTM() 转客户端坐标。
  *
- * 关键点二：`<ellipse class="pet-shadow">`（地面阴影，cy=90/ry=5）几乎不可见，
- * 却位于猫本体（爪子 cy=78）下方。若把它算进外接框，吸附时贴住面板的是「阴影下沿」，
- * 视觉上猫的爪子就会离面板空出约 10px（用户反馈的「距离边框还有间隙」）。
- * 因此把底部收紧到阴影上沿，让爪子成为真正的贴合边。
+ * 关键点二：`<ellipse class="pet-shadow">`（地面阴影，cx=50 cy=90 rx=25 ry=5）几乎不可见，
+ * 但它的包围盒**四个方向都超出猫本体**：
+ *   - 纵向：阴影 y 85..95，猫本体（爪子 cy=78/ry=4、身体底 ≈80）只到 80；
+ *   - 横向：阴影 x 25..75，猫本体（耳朵 x 25..75、脸 25..75）基本同宽。
+ * 若把它算进外接框，四个方向的贴合边都会落在阴影边缘上，视觉上离面板空出一截。
+ * 因此按阴影的纵向半径对**四条边**做等量内缩（旋转 90° 后同样成立，
+ * 因为内缩量是各向同性的），让猫本体成为真正的贴合边。
  */
 function readPetAnchor() {
   if (petSvg && typeof petSvg.getBBox === 'function' && typeof petSvg.getScreenCTM === 'function') {
@@ -525,18 +528,18 @@ function readPetAnchor() {
           xs.push(ctm.a * ux + ctm.c * uy + ctm.e);
           ys.push(ctm.b * ux + ctm.d * uy + ctm.f);
         });
-        const left = Math.min(...xs);
-        const top = Math.min(...ys);
-        const width = Math.max(...xs) - left;
+        let left = Math.min(...xs);
+        let top = Math.min(...ys);
+        let width = Math.max(...xs) - left;
         let height = Math.max(...ys) - top;
 
-        // 排除地面阴影：把底边收到阴影上沿（阴影为透明椭圆，不应作为贴合边）
-        const shadowTop = readShadowTopClient(ctm);
-        if (shadowTop !== null) {
-          const bottomNoShadow = shadowTop;
-          if (bottomNoShadow > top && bottomNoShadow < top + height) {
-            height = bottomNoShadow - top;
-          }
+        // 按地面阴影的纵向半径对四边等量内缩
+        const inset = readShadowInset(ctm);
+        if (inset > 0 && width > inset * 2 && height > inset * 2) {
+          left += inset;
+          top += inset;
+          width -= inset * 2;
+          height -= inset * 2;
         }
 
         if (width >= 1 && height >= 1) {
@@ -562,18 +565,23 @@ function readPetAnchor() {
   };
 }
 
-/** 地面阴影在客户端坐标下的上沿；无阴影或不可测量时返回 null */
-function readShadowTopClient(ctm) {
+/**
+ * 地面阴影在客户端坐标下的纵向半径（= 需要从四边内缩的量）。
+ * 各向同性，因此旋转 90° 后仍适用。无阴影或不可测量时返回 0。
+ */
+function readShadowInset(ctm) {
   const shadow = petSvg && petSvg.querySelector ? petSvg.querySelector('.pet-shadow') : null;
-  if (!shadow || typeof shadow.getBBox !== 'function') return null;
+  if (!shadow || typeof shadow.getBBox !== 'function') return 0;
   try {
     const sBox = shadow.getBBox();
-    if (!sBox || !sBox.height) return null;
-    // 阴影为水平椭圆，取包围盒顶边（y 方向最上端）作为收紧基准
-    const ys = [sBox.y, sBox.y + sBox.height].map((uy) => ctm.b * sBox.x + ctm.d * uy + ctm.f);
-    return Math.min(...ys);
+    if (!sBox || !sBox.height) return 0;
+    // ry 通过 CTM 的纵轴缩放映射到客户端像素
+    const scaleY = Math.hypot(ctm.b, ctm.d) || 1;
+    const scaleX = Math.hypot(ctm.a, ctm.c) || 1;
+    // 取两个方向的映射结果中较小者，保证内缩不会超出实际尺寸
+    return Math.min((sBox.height / 2) * scaleY, (sBox.width / 2) * scaleX);
   } catch (_) {
-    return null;
+    return 0;
   }
 }
 

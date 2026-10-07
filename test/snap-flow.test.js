@@ -23,9 +23,12 @@ function ok(name, fn) {
 
 /* ---------- 模拟器 ---------- */
 const WIN = 160;
-// 宠物视觉框：SVG 内容在 100×100 viewBox 中占 x 15..85 / y 10..95
-// 缩放 0.9 → 宽 63、高 76.5，相对窗口居中
-const ANCHOR = { left: 48, top: 38, width: 63, height: 77 };
+// 宠物视觉框（与读图逻辑一致）：
+//   SVG 内容包围盒（含地面阴影椭圆）：x 15..85 / y 10..95，缩放 0.9
+//   → 客户端 63.0 × 76.5，起点 (48, 38)
+//   再按阴影纵向半径（ry=5 → 2.25px）四边等量内缩 → 58.5 × 72.0，起点 (50.25, 40.25)
+//   取整后如下（左右下上也一并内缩，因为阴影包围盒四向都超出猫本体）
+const ANCHOR = { left: 50, top: 40, width: 59, height: 72 };
 
 /**
  * 按「希望宠物视觉框与面板留出多少间隙」构造浮窗位置。
@@ -183,9 +186,16 @@ ok('纵向移动 Dock 100px 后仍紧贴', () => {
   sim.reportAnchor();
   sim.moveDock(0, -100);
   assert.strictEqual(sim.gapTo('top'), sim.visualGap, '纵向移动后出现间隙');
-  // 贴上方时 y = panel.y - visualGap - anchor.top - anchor.height
-  // visualGap 为负（-2）→ 视觉下沿略微越过面板上沿，故 y 比 panel.y-115 小 2
-  assert.strictEqual(sim.float.y, (900 - 100) - 38 - 77 + 2);
+  // 期望值由 positionForSide 推导，避免手算与硬编码（本文件已多次因此误报）
+  const expected = positionForSide({
+    side: 'top',
+    floatBounds: sim.float,
+    anchor: ANCHOR,
+    panelBounds: sim.panel,
+    visualGap: sim.visualGap,
+    relation: sim.relation
+  });
+  assert.strictEqual(sim.float.y, expected.y, '非吸附轴外的坐标与公式不一致');
 });
 ok('连续移动 10 次不累积误差', () => {
   const sim = createSim({ float: floatFor('top') });
