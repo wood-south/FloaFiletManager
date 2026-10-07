@@ -21,8 +21,8 @@ const SNAP_VISUAL_GAP = -2;
 // 垂直方向的额外校正（正数=远离面板，负数=更贴近）。
 // 单独拆出来是因为上下两端参与并集的图元不同（上方是耳尖/头顶，下方是爪子外切盒），
 // "包围盒 vs 可见形状"的误差不相等；左右方向实测已贴合，无需校正。
-const SNAP_VERTICAL_GAP_TOP = 3;
-const SNAP_VERTICAL_GAP_BOTTOM = -4;
+const SNAP_VERTICAL_GAP_TOP = 11;
+const SNAP_VERTICAL_GAP_BOTTOM = -8;
 
 /** 按方向返回实际使用的视觉间隙（公式在 snap.js，与测试共用，避免分叉） */
 function visualGapFor(side) {
