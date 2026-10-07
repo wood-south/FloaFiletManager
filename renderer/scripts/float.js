@@ -436,4 +436,109 @@ window.electronAPI.onDockSnapChanged((side) => {
   }
 });
 
+/* ========== 宠物真实视觉框上报 ==========
+   吸附位置不能再依赖手调的像素补偿常数：宠物在 100×100 viewBox 中实际约占 90×80，
+   贴边旋转 90° 后视觉宽变成 80，hover 时还有 1.05 倍缩放 —— 任何固定值都只在单一
+   姿态下正确。这里持续上报真实视觉框（含 transform），主进程据此推导吸附位置。
+
+   为避免过渡动画期间频繁触发重算，采用「变化后连续稳定 N 帧才上报」的策略。 */
+const visualBox = document.querySelector('.pet-avatar');
+let anchorReportTimer = null;
+let anchorStableFrames = 0;
+let anchorLastReport = null;
+
+function readPetAnchor() {
+  const rect = visualBox ? visualBox.getBoundingClientRect() : null;
+  if (!rect || !rect.width || !rect.height) return null;
+  return {
+    left: Math.round(rect.left),
+    top: Math.round(rect.top),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  };
+}
+
+function isSameAnchor(a, b) {
+  if (!a || !b) return false;
+  return a.left === b.left && a.top === b.top &&
+    a.width === b.width && a.height === b.height;
+}
+
+function startAnchorWatch() {
+  let last = readPetAnchor();
+  anchorStableFrames = 0;
+  const tick = () => {
+    const cur = readPetAnchor();
+    if (cur) {
+      if (isSameAnchor(cur, last)) {
+        anchorStableFrames++;
+        // 连续 3 帧无变化视为过渡结束，此时才上报（避免中途触发吸附重算）
+        if (anchorStableFrames === 3 && !isSameAnchor(cur, anchorLastReport)) {
+          anchorLastReport = cur;
+          if (window.electronAPI?.reportPetAnchor) {
+            window.electronAPI.reportPetAnchor(cur);
+          }
+        }
+      } else {
+        anchorStableFrames = 0;
+        last = cur;
+      }
+    }
+    anchorReportTimer = requestAnimationFrame(tick);
+  };
+  anchorReportTimer = requestAnimationFrame(tick);
+}
+
+function stopAnchorWatch() {
+  if (anchorReportTimer) {
+    cancelAnimationFrame(anchorReportTimer);
+    anchorReportTimer = null;
+  }
+}
+
+// 窗口隐藏时无需上报（轮询本身开销很低，但没必要空转）
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopAnchorWatch();
+  else startAnchorWatch();
+});
+
+startAnchorWatch();
+
+/* ========== 光标稳定 ==========
+   原先依赖 `.pet-body:hover` 与 `.drag-overlay` 等元素的 CSS 命中测试来切换光标，
+   但 hover 会触发 transform: scale(1.05)，命中区随之变化；在窗口移动/缩放期间
+   命中测试滞后会形成 enter/leave 来回触发，表现为光标在「箭头 ↔ 手型」之间频繁切换。
+   这里改为用一次 getBoundingClientRect 命中判定来决定光标，不再依赖 hover 状态。 */
+const CURSOR_GRAB = 'grab';
+const CURSOR_GRABBING = 'grabbing';
+const CURSOR_POINTER = 'pointer';
+
+function setPetCursor(cursor) {
+  if (petBody && petBody.style.getPropertyValue('--pet-cursor') !== cursor) {
+    petBody.style.setProperty('--pet-cursor', cursor);
+  }
+}
+
+document.addEventListener('mousemove', (e) => {
+  if (isDragging) {
+    setPetCursor(CURSOR_GRABBING);
+    return;
+  }
+  const target = e.target;
+  // 菜单按钮/退出按钮上显示手型
+  if (target && target.closest && target.closest('.menu-btn, .quit-btn')) {
+    setPetCursor(CURSOR_POINTER);
+    return;
+  }
+  const rect = visualBox ? visualBox.getBoundingClientRect() : null;
+  if (!rect) return;
+  const inside = e.clientX >= rect.left && e.clientX <= rect.right &&
+    e.clientY >= rect.top && e.clientY <= rect.bottom;
+  setPetCursor(inside ? CURSOR_GRAB : 'default');
+});
+
+document.addEventListener('mouseleave', () => {
+  setPetCursor(CURSOR_GRAB);
+});
+
 

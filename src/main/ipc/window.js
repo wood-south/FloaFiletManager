@@ -1,10 +1,19 @@
 const { ipcMain, shell, BrowserWindow } = require('electron');
+const { computeDockSnap, computeSnapRelation } = require('../snap');
 
 let savedSnapEdges = null;
 let savedFloatBounds = null;
 let savedDockBounds = null;
 let dockPanelOffset = null; // dock-panel 真实渲染边界相对 dock 窗口左上角的偏移 {left,top,width,height}
 let floatSnapToDock = null; // 浮窗吸附到 dock 的关系 {side, offsetX, offsetY}
+// 宠物在浮窗内的真实视觉框（相对浮窗左上角，含贴边旋转与 hover 缩放）
+// 由渲染进程上报；吸附位置一律由它推导，不再使用手调的 snapInset 常数
+let petVisualAnchor = null;
+
+// 吸附触发距离（像素）
+const SNAP_DISTANCE = 60;
+// 吸附后宠物视觉边框与面板之间的间隙（0 = 视觉紧贴）
+const SNAP_VISUAL_GAP = 0;
 
 function getSnapEdges(bounds, workArea) {
   const visibleSize = 100;
@@ -67,63 +76,37 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
 
     // 浮窗吸附到 Dock 真实渲染边框：仅当未触发屏幕边缘贴边时生效
     // 让浮窗可见地贴在 dock-panel 某一侧（上/下/左/右），与"屏幕贴边隐藏"互斥
+    // 几何计算见 ../snap.js（纯函数，可用 test/snap.test.js 验证）：
+    // 不再使用手调的 snapInset 常数，改用渲染进程上报的宠物真实视觉框，
+    // 这样贴边旋转（视觉框变 90×80）与 hover 缩放时位置依然准确。
     if (newX === bounds.x && newY === bounds.y) {
       try {
-        const { getDockWindow, getDockVisible } = require('../windows');
-        const dockWin = typeof getDockWindow === 'function' ? getDockWindow() : null;
-        const dockVisible = typeof getDockVisible === 'function' ? getDockVisible() : false;
-        if (dockVisible && dockWin && !dockWin.isDestroyed()) {
-          const dk = getDockPanelScreenBounds(); // 真实渲染边界（而非透明窗口边界）
-          const snapDist = 50; // 吸附触发阈值：浮窗距 dock 多远时吸附
-          // 视觉间隙补偿：浮窗窗口(160)与宠物视觉(90)差值一半，让宠物视觉贴紧 dock
-          // 四个方向独立可调，数值越大浮窗越往 dock 方向重叠（越贴边）
-          const snapInsetTop = 52;
-          const snapInsetBottom = 52;
-          const snapInsetLeft = 52;
-          const snapInsetRight = 52;
-          const fx = bounds.x, fy = bounds.y, fw = bounds.width, fh = bounds.height;
-          let snapped = null;
+        const panel = getDockPanelScreenBounds();
+        if (panel) {
+          // 视觉框缺失时回退为窗口自身边界（旧行为），避免完全无法吸附
+          const anchor = petVisualAnchor || {
+            left: 0, top: 0, width: bounds.width, height: bounds.height
+          };
+          const snapResult = computeDockSnap({
+            floatBounds: { x: newX, y: newY, width: bounds.width, height: bounds.height },
+            anchor,
+            panelBounds: panel,
+            snapDistance: SNAP_DISTANCE,
+            visualGap: SNAP_VISUAL_GAP
+          });
 
-          // x 方向有重叠时才考虑上下吸附
-          const xOverlap = fx + fw > dk.x && fx < dk.x + dk.width;
-          // y 方向有重叠时才考虑左右吸附
-          const yOverlap = fy + fh > dk.y && fy < dk.y + dk.height;
-
-          if (xOverlap) {
-            // gap 正数=浮窗在 dock 外侧，负数=浮窗边已越过 dock 边；均在阈值内吸附
-            const gapAbove = dk.y - (fy + fh);          // 浮窗下沿 vs dock 上沿
-            const gapBelow = fy - (dk.y + dk.height);   // 浮窗上沿 vs dock 下沿
-            if (Math.abs(gapAbove) <= snapDist) {
-              newY = dk.y - fh + snapInsetTop;   // 吸附到 dock 上方
-              snapped = 'top';
-            } else if (Math.abs(gapBelow) <= snapDist) {
-              newY = dk.y + dk.height - snapInsetBottom; // 吸附到 dock 下方
-              snapped = 'bottom';
-            }
-          }
-          if (!snapped && yOverlap) {
-            const gapLeft = dk.x - (fx + fw);           // 浮窗右沿 vs dock 左沿
-            const gapRight = fx - (dk.x + dk.width);    // 浮窗左沿 vs dock 右沿
-            if (Math.abs(gapLeft) <= snapDist) {
-              newX = dk.x - fw + snapInsetLeft;   // 吸附到 dock 左侧
-              snapped = 'left';
-            } else if (Math.abs(gapRight) <= snapDist) {
-              newX = dk.x + dk.width - snapInsetRight; // 吸附到 dock 右侧
-              snapped = 'right';
-            }
-          }
-
-          if (snapped) {
-            // 记录吸附关系（相对 dock-panel 左上角的偏移），供 dock 移动时浮窗跟随
-            floatSnapToDock = {
-              side: snapped,
-              offsetX: newX - dk.x,
-              offsetY: newY - dk.y
-            };
-            dockSnapSide = snapped; // 记录朝向，让宠物底部朝向 dock 边框
+          if (snapResult) {
+            newX = snapResult.x;
+            newY = snapResult.y;
+            dockSnapSide = snapResult.side;
+            // 记录吸附关系，供 dock 移动时浮窗跟随
+            floatSnapToDock = computeSnapRelation({
+              floatBounds: { x: newX, y: newY, width: bounds.width, height: bounds.height },
+              panelBounds: panel,
+              side: snapResult.side
+            });
           } else {
-            floatSnapToDock = null; // 未吸附，清除关系
-            dockSnapSide = null;
+            floatSnapToDock = null;
           }
         } else {
           floatSnapToDock = null;
@@ -221,14 +204,19 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
   ipcMain.handle('report-dock-panel-offset', (event, offset) => {
     if (offset && typeof offset.width === 'number' && typeof offset.height === 'number') {
       dockPanelOffset = offset;
+      // 面板几何变了（改图标大小/数量、切模糊模式、窗口缩放等）：
+      // 若浮窗正在吸附，按新几何校正一次，否则会停在旧位置
+      resetDockSnap();
     }
   });
 
   // 计算 dock-panel 的真实屏幕边界
   function getDockPanelScreenBounds() {
-    const { getDockWindow } = require('../windows');
-    const dockWin = getDockWindow();
+    const { getDockWindow, getDockVisible } = require('../windows');
+    const dockWin = typeof getDockWindow === 'function' ? getDockWindow() : null;
     if (!dockWin || dockWin.isDestroyed()) return null;
+    // Dock 隐藏时不应参与吸附
+    if (typeof getDockVisible === 'function' && !getDockVisible()) return null;
     if (!dockPanelOffset) {
       // 未上报时回退到 dock 窗口边界
       return dockWin.getBounds();
@@ -240,6 +228,88 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
       width: dockPanelOffset.width,
       height: dockPanelOffset.height
     };
+  }
+
+  /**
+   * 宠物视觉框上报（相对浮窗左上角，含贴边旋转与 hover 缩放）。
+   * 锚点或 Dock 几何变化后重算吸附位置：
+   * 早期实现只在拖动结束（mouseup）时算一次吸附，之后旋转/缩放/移动 Dock 都不会修正，
+   * 表现为「有时候吸附位置不对」。
+   */
+  ipcMain.handle('report-pet-anchor', (event, anchor) => {
+    if (!anchor || typeof anchor.width !== 'number' || typeof anchor.height !== 'number') {
+      return false;
+    }
+    const prev = petVisualAnchor;
+    petVisualAnchor = {
+      left: Math.round(anchor.left || 0),
+      top: Math.round(anchor.top || 0),
+      width: Math.round(anchor.width),
+      height: Math.round(anchor.height)
+    };
+    // 变化不足 1px 视为相同，避免 hover 过渡期间频繁重算
+    if (prev &&
+        prev.left === petVisualAnchor.left &&
+        prev.top === petVisualAnchor.top &&
+        prev.width === petVisualAnchor.width &&
+        prev.height === petVisualAnchor.height) {
+      return true;
+    }
+    resetDockSnap();
+    return true;
+  });
+
+  /**
+   * 按当前几何重新计算吸附位置（拖动结束、Dock 移动/改尺寸、宠物视觉框变化后调用）。
+   * 未处于吸附关系时不做事，避免把用户自由摆放的浮窗强行吸过去。
+   */
+  function resetDockSnap() {
+    if (!floatSnapToDock) return false;
+    const floatWindow = getFloatWindow();
+    if (!floatWindow || floatWindow.isDestroyed()) return false;
+    const panel = getDockPanelScreenBounds();
+    if (!panel) {
+      floatSnapToDock = null;
+      return false;
+    }
+    const bounds = floatWindow.getBounds();
+    const anchor = petVisualAnchor || { left: 0, top: 0, width: bounds.width, height: bounds.height };
+
+    // 沿**当前吸附的那条边**重算位置：不重新挑方向，避免浮窗被"吸"到另一侧。
+    // 用关系重算而非 delta 累加 —— 累加会把浮窗自身的边界钳制误差一起带进去。
+    let x = bounds.x;
+    let y = bounds.y;
+
+    switch (floatSnapToDock.side) {
+      case 'top':
+        y = Math.round(panel.y - anchor.top - anchor.height - SNAP_VISUAL_GAP);
+        break;
+      case 'bottom':
+        y = Math.round(panel.y + panel.height - anchor.top + SNAP_VISUAL_GAP);
+        break;
+      case 'left':
+        x = Math.round(panel.x - anchor.left - anchor.width - SNAP_VISUAL_GAP);
+        break;
+      case 'right':
+        x = Math.round(panel.x + panel.width - anchor.left + SNAP_VISUAL_GAP);
+        break;
+      default:
+        return false;
+    }
+
+    if (x !== bounds.x || y !== bounds.y) {
+      floatWindow.setPosition(x, y);
+    }
+    floatSnapToDock = computeSnapRelation({
+      floatBounds: { x, y, width: bounds.width, height: bounds.height },
+      panelBounds: panel,
+      side: floatSnapToDock.side
+    });
+    // 视觉框位置变了，通知渲染进程同步朝向
+    try {
+      floatWindow.webContents.send('dock-snap-changed', floatSnapToDock.side);
+    } catch (_) {}
+    return true;
   }
 
   // 临时扩大浮窗窗口以容纳模态框（浮窗默认仅 160x160，模态框无法完整显示）
@@ -386,17 +456,12 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     let newY = bounds.y + deltaY;
     newX = Math.max(workArea.x, Math.min(newX, workArea.x + workArea.width - bounds.width));
     newY = Math.max(workArea.y, Math.min(newY, workArea.y + workArea.height - bounds.height));
-    const actualDx = newX - bounds.x;
-    const actualDy = newY - bounds.y;
     win.setPosition(newX, newY);
 
-    // 浮窗吸附在 dock 上时，随 dock 一起移动（保持吸附关系）
+    // 浮窗吸附在 dock 上时，随 dock 一起移动：按吸附关系重算位置，
+    // 而不是累加 delta（累加会把浮窗自身的边界钳制误差一并带进去，越移动越偏）
     if (floatSnapToDock) {
-      const floatWin = getFloatWindow();
-      if (floatWin && !floatWin.isDestroyed()) {
-        const fb = floatWin.getBounds();
-        floatWin.setPosition(fb.x + actualDx, fb.y + actualDy);
-      }
+      resetDockSnap();
     }
 
     scheduleDockPosSave(newX, newY + bounds.height);
@@ -534,6 +599,9 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
       savedDockBounds = { x: newX, y: newY, width: newW, height: newH };
     }
     scheduleDockPosSave(newX, newY + newH);
+    // 窗口边界与随后的面板上报都会改变面板几何；若浮窗正在吸附，按新几何校正一次
+    // （渲染进程会在 resize 后上报 dock-panel 偏移，届时同样会触发校正）
+    resetDockSnap();
     return true;
   });
 
