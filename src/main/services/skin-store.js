@@ -22,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const { validatePetSkin, isSafeRelPath } = require('../../../renderer/pet/skin');
 const { STATES } = require('../../../renderer/pet/behavior');
+const zipReader = require('./zip-reader');
 
 /** 状态名清单来自渲染侧状态表 —— 单一事实来源，不在这里复制一份 */
 const VALID_STATES = Object.keys(STATES);
@@ -30,8 +31,9 @@ const SKIN_FILE = 'pet.json';
 
 const LIMITS = {
   fileBytes: 4 * 1024 * 1024,       // 单文件 4MB
-  totalBytes: 32 * 1024 * 1024,     // 整包 32MB
-  fileCount: 256                    // 文件数上限
+  totalBytes: 32 * 1024 * 1024,     // 整包 32MB（解压后）
+  fileCount: 256,                   // 文件数上限
+  zipBytes: 64 * 1024 * 1024        // zip 压缩包本身的上限（防「解压前就读爆内存」）
 };
 
 const ALLOWED_EXT = new Set([
@@ -306,6 +308,101 @@ function importSkinFromDir(srcDir, userRoot) {
 }
 
 /**
+ * 导入一个 zip 皮肤包（阶段 8.5）。
+ *
+ * 安全要点：解压前先用 zip-reader 的条目级校验挡住路径穿越，
+ * 且**先解到临时目录、再复用 importSkinFromDir 的完整校验与落地流程** ——
+ * 这样 zip 与目录两条导入路径共用同一套校验，不会出现「zip 能绕过某些检查」。
+ *
+ * 额外容错：很多皮肤包会把文件放在一层顶层目录里
+ * （例如 `cat-skin/pet.json` 而不是 `pet.json`），
+ * 若解出的 pet.json 不在根，就自动下钻一层。
+ *
+ * @param {string} zipPath
+ * @param {string} userRoot
+ */
+function importSkinFromZip(zipPath, userRoot) {
+  const fail = (msg) => ({ ok: false, errors: [].concat(msg), warnings: [], skin: null, dir: null });
+
+  if (typeof zipPath !== 'string' || !zipPath) return fail('缺少 zip 路径');
+  let zipBuf;
+  try {
+    const st = fs.statSync(zipPath);
+    if (!st.isFile()) return fail('不是文件: ' + zipPath);
+    if (st.size > LIMITS.zipBytes) {
+      return fail('zip 文件过大：' + st.size + ' > ' + LIMITS.zipBytes);
+    }
+    zipBuf = fs.readFileSync(zipPath);
+  } catch (e) {
+    return fail('无法读取 zip: ' + e.message);
+  }
+
+  // 解到临时目录（与导入落地区同一卷，便于 rename）
+  const staging = path.join(userRoot, '.unzip-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+  try {
+    fs.mkdirSync(staging, { recursive: true });
+
+    let files;
+    try {
+      files = zipReader.extractAll(zipBuf, {
+        maxEntries: LIMITS.fileCount,
+        maxFileBytes: LIMITS.fileBytes,
+        maxTotalBytes: LIMITS.totalBytes
+      }).files;
+    } catch (e) {
+      fs.rmSync(staging, { recursive: true, force: true });
+      return fail('皮肤包解压失败: ' + e.message);
+    }
+
+    if (files.length === 0) {
+      fs.rmSync(staging, { recursive: true, force: true });
+      return fail('皮肤包是空的');
+    }
+
+    // 逐个写出；路径已由 zip-reader 校验过安全
+    for (const f of files) {
+      const dest = path.resolve(staging, f.name);
+      if (!isInside(staging, dest)) {
+        fs.rmSync(staging, { recursive: true, force: true });
+        return fail('皮肤包内含越出目录的路径: ' + f.name);
+      }
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, f.data);
+    }
+
+    // 若 pet.json 在唯一的一层子目录里，下钻一层（常见打包习惯）
+    let srcDir = staging;
+    if (!fs.existsSync(path.join(srcDir, SKIN_FILE))) {
+      let subs = [];
+      try {
+        subs = fs.readdirSync(srcDir, { withFileTypes: true }).filter((e) => e.isDirectory());
+      } catch (_) { /* 交给下面的校验报错 */ }
+      if (subs.length === 1) {
+        const inner = path.join(srcDir, subs[0].name);
+        if (fs.existsSync(path.join(inner, SKIN_FILE))) srcDir = inner;
+      }
+    }
+
+    if (!fs.existsSync(path.join(srcDir, SKIN_FILE))) {
+      fs.rmSync(staging, { recursive: true, force: true });
+      return fail('皮肤包内未找到 ' + SKIN_FILE);
+    }
+
+    const res = importSkinFromDir(srcDir, userRoot);
+    // importSkinFromDir 只拷贝内容，临时目录由这里负责清理
+    try {
+      fs.rmSync(staging, { recursive: true, force: true });
+    } catch (_) { /* 清理失败不影响导入结果 */ }
+    return res;
+  } catch (e) {
+    try {
+      if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
+    } catch (_) { /* 清理失败不掩盖原始错误 */ }
+    return fail('导入失败: ' + e.message);
+  }
+}
+
+/**
  * 导出皮肤到目标目录（用户皮肤目录 → 外部目录）。
  * @returns {{ok:boolean, errors:string[], dir:string|null}}
  */
@@ -326,16 +423,73 @@ function exportSkin(skinDir, destDir) {
   }
 }
 
+/** 图片扩展名 → MIME，用于把皮肤图片内联成 data: URL */
+const IMAGE_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.svg': 'image/svg+xml'
+};
+
+/**
+ * 把皮肤目录内的图片读成 data: URL。
+ *
+ * 为什么必须内联：渲染进程的 CSP 是 `img-src 'self' data:`，
+ * 而皮肤位于 userData 下（不是渲染页面的同源目录），
+ * `<img src="C:\...\atlas.png">` 会被 CSP 直接拒绝。
+ * 与其放宽 CSP（会给所有图片开任意本地文件读取），不如主进程读好后内联。
+ * 单文件上限已有 4MB，Base64 膨胀约 33%，可接受。
+ *
+ * @returns {string|null} data URL；文件不存在/类型不支持/超限时返回 null
+ */
+function toDataUrl(skinDir, relPath) {
+  if (typeof relPath !== 'string' || !relPath) return null;
+  const mime = IMAGE_MIME[path.extname(relPath).toLowerCase()];
+  if (!mime) return null;
+  const full = path.resolve(skinDir, relPath);
+  if (!isInside(skinDir, full)) return null;
+  try {
+    const st = fs.statSync(full);
+    if (!st.isFile() || st.size > LIMITS.fileBytes) return null;
+    const buf = fs.readFileSync(full);
+    return 'data:' + mime + ';base64,' + buf.toString('base64');
+  } catch (_) {
+    return null;
+  }
+}
+
+/** 把皮肤描述里用到的图片内联，得到渲染层可直接使用的对象 */
+function withInlineAssets(skin, skinDir) {
+  if (!skin || !skin.render) return skin;
+  const out = JSON.parse(JSON.stringify(skin));
+  out.dir = skinDir;
+  if (out.render.svg && out.render.svg.file) {
+    out.render.svg.dataUrl = toDataUrl(skinDir, out.render.svg.file);
+  }
+  if (out.render.atlas && out.render.atlas.file) {
+    out.render.atlas.dataUrl = toDataUrl(skinDir, out.render.atlas.file);
+  }
+  return out;
+}
+
 module.exports = {
   SKIN_FILE,
   LIMITS,
   ALLOWED_EXT,
   VALID_STATES,
+  IMAGE_MIME,
   isInside,
   listFilesRecursive,
   inspectSkinDir,
   listSkins,
   importSkinFromDir,
+  importSkinFromZip,
   exportSkin,
-  measureDir
+  measureDir,
+  toDataUrl,
+  withInlineAssets
 };

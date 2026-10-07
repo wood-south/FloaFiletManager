@@ -136,11 +136,15 @@ const CAPABILITIES = [
     description: '内置/用户皮肤的列出、导入与导出（主进程侧安全边界）',
     defaultEnabled: true,
     channels: [
-      'list-skins', 'import-skin', 'export-skin', 'select-skin-directory'
+      'list-skins', 'import-skin', 'export-skin',
+      'select-skin-directory', 'select-skin-zip',
+      'apply-skin', 'get-active-skin'
     ],
     build: (deps) => ({
       userDataDir: deps.userDataDir,
-      rootDir: deps.rootDir
+      rootDir: deps.rootDir,
+      loadConfig: deps.loadConfig,
+      saveConfig: deps.saveConfig
     }),
     register: (deps) => ipcSkin.register(deps)
   },

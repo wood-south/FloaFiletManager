@@ -6,6 +6,8 @@ module.exports = [
   { name: '配置结构 v1→v2 迁移 config-schema', file: 'config-migration.test.js' },
   { name: '多显示器选屏与钳制 display.js', file: 'display.test.js' },
   { name: '皮肤包仓库 skin-store.js', file: 'skin-store.test.js' },
+  { name: 'ZIP 读取器（阶段8.5）', file: 'zip-reader.test.js' },
+  { name: '桌宠动画帧播放器 frames.js', file: 'frames.test.js' },
   { name: '皮肤导入来源白名单 skin.js', file: 'skin-ipc.test.js' },
   { name: '皮肤 IPC 处理器行为', file: 'skin-ipc-behavior.test.js' },
   { name: 'IPC 处理器参数健壮性', file: 'ipc-handler-robustness.test.js' },
