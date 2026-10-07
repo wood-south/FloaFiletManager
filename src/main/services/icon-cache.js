@@ -7,10 +7,40 @@ const iconCache = new Map();
 let iconCachePath = null;
 let iconCacheSaveTimeout = null;
 
+// 缓存路径解析：
+// - 开发环境放项目根目录，便于查看与清理（已在 .gitignore 中忽略）
+// - 生产环境必须放 userData：早期实现写在 path.dirname(app.getPath('exe'))，
+//   安装到 C:\Program Files\ 等只读目录时必然写入失败（EPERM），且无补救手段
+function resolveCachePath() {
+  if (isDev) {
+    return path.join(rootDir, 'icon-cache.json');
+  }
+  return path.join(app.getPath('userData'), 'icon-cache.json');
+}
+
+// 兼容旧版本：若新位置没有缓存，尝试从 exe 同目录迁移一次
+function legacyCachePath() {
+  try {
+    return path.join(path.dirname(app.getPath('exe')), 'icon-cache.json');
+  } catch (_) {
+    return null;
+  }
+}
+
 function loadIconCache() {
   if (!iconCachePath) {
-    const cacheDir = isDev ? rootDir : path.dirname(app.getPath('exe'));
-    iconCachePath = path.join(cacheDir, 'icon-cache.json');
+    iconCachePath = resolveCachePath();
+    // 迁移旧缓存，避免升级后重新提取全部图标
+    try {
+      const legacy = legacyCachePath();
+      if (legacy && legacy !== iconCachePath &&
+          !fs.existsSync(iconCachePath) && fs.existsSync(legacy)) {
+        fs.copyFileSync(legacy, iconCachePath);
+        console.log('已迁移旧图标缓存:', legacy, '->', iconCachePath);
+      }
+    } catch (e) {
+      console.warn('迁移旧图标缓存失败(忽略):', e.message);
+    }
   }
   try {
     if (fs.existsSync(iconCachePath)) {

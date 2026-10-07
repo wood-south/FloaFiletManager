@@ -35,13 +35,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 修复设置窗口样式同步回调引用未定义变量、在收到 `opacity`/`blurIntensity` 时抛 `ReferenceError` 的问题
 - 修复 `icon-updated` 事件从未发送、且渲染层缓存键双重转义导致永远匹配不上的问题（两进程缓存键现严格一致，并兼容磁盘上既有的 `icon-cache.json` 格式）
 - 修复「已添加」成功提示因缺少 `success` 图标而显示为问号的问题
-- 修复右键菜单中「删除分区 / 从分区移除」缺少危险色样式的问题
-- 移除已失效的「图标辅助隐藏窗口」子系统（其内联脚本被自身 CSP 拦截，且无任何调用方）
 
 ### Removed
 
-- 移除失效的「图标辅助隐藏窗口」子系统：删除 `createIconHelperWindow` / `requestIconFromHelper` 及 `helper-get-file-icon`、`helper-native-get-file-icon`、`helper-return-file-icon` 三个通道；`renderer/icon-helper.html` 与 `renderer/icon-helper-preload.js` 已清空为说明性注释（不再被任何窗口加载）
-- 清理 `dock.css` 中随设置窗口独立而废弃的约 220 行样式，以及 `#acrylic-noise` 滤镜、`--dock-icon-size` 等无消费者的 CSS 变量
+- 移除已失效的「图标辅助隐藏窗口」子系统的调用链（`createIconHelperWindow` / `requestIconFromHelper` 等已无调用方）
+
+### 未落地（计划中，勿视为已完成）
+
+> 以下条目曾记于 1.1.0，但经 2026-XX 代码审查确认**在仓库中尚未落地**。
+> 在此显式标注，避免文档领先于代码继续造成误导；完成后请移入对应版本条目并删除本节。
+
+- [ ] **修复右键菜单危险色**：`renderer/file-manager.html` 的「删除分区 / 从分区移除」使用 `class="ctx-item danger"`，
+      但 `renderer/styles/file-manager.css` 中没有 `.ctx-item.danger` 规则（危险色只定义在 `dock.css` 的
+      `.dock-context-menu .ctx-item.danger`），因此这两项当前不会显示为红色。
+- [ ] **移除图标辅助窗口子系统**：`renderer/icon-helper.html`、`renderer/icon-helper-preload.js`、
+      `renderer/scripts/icon-helper.js` 当前仍为完整可用代码。
+- [ ] **清理 `dock.css` 废弃样式**：`renderer/styles/dock.css:908-1133`（`.dock-settings-panel`、`.settings-overlay`、
+      `.settings-slider*`、`.settings-item` 等）在设置窗口独立后已无任何使用方。
+- [ ] **移除无消费者的 CSS 变量**：`renderer/dock.html:13` 的 `#acrylic-noise` 滤镜未被引用；
+      `renderer/scripts/dock.js:1107-1108` 仍在写入 `--dock-icon-size` / `--dock-item-count`，但 `dock.css` 无读取方
+      （图标尺寸实际由 `applyIconSizes()` 写内联样式实现）。
 
 ## [1.0.0] - 2024-07-15
 

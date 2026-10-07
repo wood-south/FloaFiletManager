@@ -637,6 +637,46 @@ closeBtn.addEventListener('click', () => {
   window.electronAPI.closeFileManager();
 });
 
+/* ========== 窗口拖动 ==========
+   透明无边框窗口中 CSS -webkit-app-region: drag 不可靠，
+   统一改为监听鼠标事件 + IPC 移动原生窗口（与设置窗口实现一致）。 */
+const fmHeader = document.querySelector('.fm-header');
+if (fmHeader) {
+  fmHeader.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    // 头部内的可交互元素不触发拖动
+    if (e.target.closest('.close-btn, button, input, a')) return;
+
+    let startX = e.screenX;
+    let startY = e.screenY;
+    let dragging = false;
+
+    const onMove = (ev) => {
+      if (!dragging) {
+        if (Math.abs(ev.screenX - startX) < 3 && Math.abs(ev.screenY - startY) < 3) return;
+        dragging = true;
+        fmHeader.style.cursor = 'grabbing';
+      }
+      const dx = ev.screenX - startX;
+      const dy = ev.screenY - startY;
+      startX = ev.screenX;
+      startY = ev.screenY;
+      if (window.electronAPI.moveFileManager) {
+        window.electronAPI.moveFileManager(dx, dy);
+      }
+    };
+
+    const onUp = () => {
+      fmHeader.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 uploadBtn.addEventListener('click', () => {
   const input = document.createElement('input');
   input.type = 'file';

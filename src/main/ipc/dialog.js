@@ -1,10 +1,13 @@
 const { ipcMain, dialog } = require('electron');
 const path = require('path');
+const guard = require('../security/guard');
 
 function register({ createFileManagerWindow, getFileManagerWindow, iconExtractor }) {
   const { parseUrlFile } = iconExtractor;
 
-  ipcMain.handle('select-directory', async () => {
+  ipcMain.handle('select-directory', async (event) => {
+    const sender = guard.validateSender(event);
+    if (!sender.ok) return null;
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory']
     });
@@ -39,12 +42,16 @@ function register({ createFileManagerWindow, getFileManagerWindow, iconExtractor
   });
 
   ipcMain.handle('open-file-location', async (event, filePath) => {
+    const sender = guard.validateSender(event);
+    if (!sender.ok) return { success: false, error: sender.error };
     const { shell } = require('electron');
     shell.showItemInFolder(filePath);
     return true;
   });
 
   ipcMain.handle('open-file', async (event, filePath) => {
+    const sender = guard.validateSender(event);
+    if (!sender.ok) return { success: false, error: sender.error };
     const { shell } = require('electron');
     try {
       // 对于快捷方式(.lnk)和可执行文件，用 shell.openPath 可能失败

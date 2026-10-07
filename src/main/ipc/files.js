@@ -1,8 +1,25 @@
 const { ipcMain, nativeImage, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { userDataDir } = require('../config');
+const guard = require('../security/guard');
 
 let fileManagerCurrentPath = null;
+
+/**
+ * 动态收集允许操作的根目录。
+ * 每次调用都重新读取配置，这样用户在运行期新增分区/路径后无需重启即可生效。
+ */
+function allowedRoots() {
+  try {
+    return guard.collectAllowedRoots(loadConfigRef(), userDataDir);
+  } catch (_) {
+    return [userDataDir];
+  }
+}
+
+// loadConfig 由 register 注入，便于测试与避免循环依赖
+let loadConfigRef = () => ({});
 
 function notifyFilesChanged(getFileManagerWindow, destDir) {
   if (!getFileManagerWindow) return;
@@ -13,6 +30,7 @@ function notifyFilesChanged(getFileManagerWindow, destDir) {
 }
 
 function register({ loadConfig, getFileManagerWindow }) {
+  loadConfigRef = loadConfig;
 
   // 文件管理器同步当前浏览路径
   ipcMain.handle('sync-current-path', (event, currentPath) => {
@@ -29,9 +47,23 @@ function register({ loadConfig, getFileManagerWindow }) {
     return config.preferredPath || config.savePath;
   });
   ipcMain.handle('upload-file', async (event, { sourcePath, fileName, overwrite, destDir }) => {
+    const sender = guard.validateSender(event);
+    if (!sender.ok) return { success: false, error: sender.error };
+
     const config = loadConfig();
 
     const savePath = destDir || config.savePath;
+
+    // 禁止目录穿越：文件名只保留最后一段并过滤非法字符
+    const safeName = guard.sanitizeFileName(fileName || sourcePath);
+    if (!safeName) {
+      console.error('上传文件名非法:', fileName);
+      return { success: false, error: '文件名非法' };
+    }
+    if (destDir && !guard.isPathAllowed(destDir, allowedRoots())) {
+      console.error('上传目标目录不在允许范围:', destDir);
+      return { success: false, error: '目标目录不在允许范围内' };
+    }
 
     console.log('上传文件:', { sourcePath, fileName, savePath, destDir, overwrite });
 
@@ -53,7 +85,7 @@ function register({ loadConfig, getFileManagerWindow }) {
         return { success: false, error: '请使用上传文件夹功能上传文件夹' };
       }
 
-      const destPath = path.join(savePath, fileName);
+      const destPath = path.join(savePath, safeName);
 
       // 检查重名：未明确覆盖时，返回重复提示让前端确认
       if (fs.existsSync(destPath) && !overwrite) {
@@ -100,6 +132,13 @@ function register({ loadConfig, getFileManagerWindow }) {
     console.log('上传文件夹:', { sourceFolder, savePath, destDir });
 
     try {
+      const sender = guard.validateSender(event);
+      if (!sender.ok) return { success: false, error: sender.error };
+      if (destDir && !guard.isPathAllowed(destDir, allowedRoots())) {
+        console.error('上传目标目录不在允许范围:', destDir);
+        return { success: false, error: '目标目录不在允许范围内' };
+      }
+
       if (!fs.existsSync(savePath)) {
         console.log('保存路径不存在，创建:', savePath);
         fs.mkdirSync(savePath, { recursive: true });
@@ -225,6 +264,15 @@ function register({ loadConfig, getFileManagerWindow }) {
   ipcMain.handle('delete-file', async (event, filePath) => {
     const { shell } = require('electron');
     try {
+      const sender = guard.validateSender(event);
+      if (!sender.ok) return { success: false, error: sender.error };
+
+      // 只允许删除配置中登记过的根目录内的文件，避免任意路径删除
+      if (!guard.isPathAllowed(filePath, allowedRoots())) {
+        console.error('删除路径不在允许范围:', filePath);
+        return { success: false, error: '该路径不在允许范围内' };
+      }
+
       if (!fs.existsSync(filePath)) {
         return { success: false, error: '文件不存在' };
       }
@@ -242,6 +290,15 @@ function register({ loadConfig, getFileManagerWindow }) {
 
   ipcMain.handle('move-file', async (event, { sourcePath, destDir }) => {
     try {
+      const sender = guard.validateSender(event);
+      if (!sender.ok) return { success: false, error: sender.error };
+
+      // 源文件必须在允许范围（移动等价于删除原位置文件）
+      if (!guard.isPathAllowed(sourcePath, allowedRoots())) {
+        console.error('移动源路径不在允许范围:', sourcePath);
+        return { success: false, error: '源路径不在允许范围内' };
+      }
+
       if (!fs.existsSync(sourcePath)) {
         return { success: false, error: '源文件不存在' };
       }

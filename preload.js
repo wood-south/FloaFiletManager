@@ -97,6 +97,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hideDock: () => ipcRenderer.invoke('hide-dock'),
   getDockVisible: () => ipcRenderer.invoke('get-dock-visible'),
   moveDock: (deltaX, deltaY) => ipcRenderer.invoke('move-dock', deltaX, deltaY),
+  moveFileManager: (deltaX, deltaY) => ipcRenderer.invoke('move-file-manager', deltaX, deltaY),
   getDockSettings: () => ipcRenderer.invoke('get-dock-settings'),
   saveDockSettings: (settings) => ipcRenderer.invoke('save-dock-settings', settings),
   openSettings: () => ipcRenderer.invoke('open-settings'),

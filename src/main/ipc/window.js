@@ -402,6 +402,26 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     scheduleDockPosSave(newX, newY + bounds.height);
   });
 
+  // 文件管理窗口拖动
+  // 注意：透明无边框窗口下 CSS -webkit-app-region: drag 不可靠（见 docs/PROBLEM_SOLUTIONS.md），
+  // 因此与设置窗口一致，改由渲染进程监听鼠标事件 + IPC 移动原生窗口。
+  ipcMain.handle('move-file-manager', (event, deltaX, deltaY) => {
+    const win = getFileManagerWindow();
+    if (!win || win.isDestroyed()) return false;
+    const bounds = win.getBounds();
+    const { workArea } = screen.getPrimaryDisplay();
+    let newX = bounds.x + deltaX;
+    let newY = bounds.y + deltaY;
+    // 至少保留一部分窗口在屏幕内，避免被拖丢
+    const minVisible = 80;
+    newX = Math.max(workArea.x - bounds.width + minVisible,
+      Math.min(newX, workArea.x + workArea.width - minVisible));
+    newY = Math.max(workArea.y,
+      Math.min(newY, workArea.y + workArea.height - minVisible));
+    win.setPosition(newX, newY);
+    return true;
+  });
+
   ipcMain.handle('open-settings', () => {
     const { createSettingsWindow } = require('../windows');
     createSettingsWindow();
