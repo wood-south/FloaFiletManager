@@ -13,6 +13,8 @@ module.exports = [
   { name: '桌宠内置配色与 colorMap pet-colors', file: 'pet-colors.test.js' },
   { name: '桌宠自主行为驱动 driver.js', file: 'driver.test.js' },
   { name: '桌宠高优先级状态退出 pet-state-exit', file: 'pet-state-exit.test.js' },
+  { name: '桌宠动画方向变体 direction.js', file: 'pet-direction.test.js' },
+  { name: '桌宠走动 wander.js', file: 'pet-wander.test.js' },
   { name: '皮肤导入来源白名单 skin.js', file: 'skin-ipc.test.js' },
   { name: '皮肤 IPC 处理器行为', file: 'skin-ipc-behavior.test.js' },
   { name: 'IPC 处理器参数健壮性', file: 'ipc-handler-robustness.test.js' },

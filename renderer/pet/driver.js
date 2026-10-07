@@ -27,11 +27,21 @@
   'use strict';
 
   const DEFAULTS = {
-    sleepAfterMs: 60 * 1000,   // 空闲多久入睡
+    sleepAfterMs: 60 * 1000,   // 空闲多久进入「该睡觉」阶段
     walkMinDelayMs: 20 * 1000, // 漫游间隔下限
     walkMaxDelayMs: 45 * 1000, // 漫游间隔上限
     walkDurationMs: 4000,      // 单次漫游持续
-    celebrateDurationMs: 1500  // 庆祝持续（状态表里是 1200，这里略长以便看全）
+    celebrateDurationMs: 1500, // 庆祝持续（状态表里是 1200，这里略长以便看全）
+    /* 待机 ↔ 睡觉的随机循环（阶段 8.7）
+       用户要求「待机和睡觉随机循环播放，不要太快」。
+       做法：空闲超过 sleepAfterMs 之后进入"小睡循环" ——
+       随机睡一会（sleepMinMs~sleepMaxMs）、醒一会（awakeMinMs~awakeMaxMs），
+       如此往复；期间用户一操作就整个中断（notifyActivity）。 */
+    napLoop: true,
+    sleepMinMs: 8 * 1000,      // 单次睡眠下限
+    sleepMaxMs: 20 * 1000,     // 单次睡眠上限
+    awakeMinMs: 4 * 1000,      // 醒来待机下限
+    awakeMaxMs: 10 * 1000      // 醒来待机上限
   };
 
   /**
@@ -122,6 +132,22 @@
     }
 
     /**
+     * **唯一**的排定入口：先清掉旧定时器再排新的。
+     *
+     * 为什么必须这样：`timer` 只保存一个句柄，若某个路径直接 `timer = schedule(...)`
+     * 覆盖它，**上一个定时器就变成孤儿** —— 既不会被取消（引用丢了），
+     * 又仍会按时触发。表现是两条定时器链各自推进、互相打断：
+     * 实测会出现 `sleep → idle → sleep` 每几百毫秒反复横跳。
+     * 所以所有排定都必须走这里。
+     */
+    function scheduleOnce(fn, ms) {
+      clearTimer();
+      if (!enabled) return null;
+      timer = schedule(fn, ms);
+      return timer;
+    }
+
+    /**
      * 安排下一次「检查」——单一定时器，每次重算，避免定时器叠加。
      *
      * 两个时刻基于**两个不同的计时起点**，这是关键：
@@ -132,14 +158,16 @@
      * **桌宠永远睡不着**（被 driver.test.js 的入睡用例抓出）。
      */
     function scheduleNext() {
-      clearTimer();
-      if (!enabled) return;
+      if (!enabled) {
+        clearTimer();
+        return;
+      }
       const userIdle = now() - idleSince;
       const sinceWalk = now() - walkStartedAt;
       const toSleep = Math.max(0, cfg.sleepAfterMs - userIdle);
       const toWalk = Math.max(0, walkTargetIdleMs() - sinceWalk);
       const wait = Math.min(toSleep, toWalk);
-      timer = schedule(onWake, Math.max(50, wait));
+      scheduleOnce(onWake, Math.max(50, wait));
     }
 
     let currentWalkTarget = null;
@@ -163,20 +191,26 @@
       }
       const userIdle = now() - idleSince;
 
-      // 睡着之后：**仍要排定下一次检查**。
-      // 桌宠睡着是正常状态，但不能因此让驱动"停摆" ——
-      // 若此刻不排定，后续 notifyActivity 又恰好没被调用（例如用户只是
-      // 移动窗口而没有产生鼠标事件），桌宠就永远醒不过来。
-      // 唤醒由 notifyActivity 负责（它用 reset() 突破 sleep 的优先级），
-      // 这里保持低频轮询即可。
+      // 睡着之后：进入「小睡循环」——睡一会、醒一会，随机往复。
+      // 用户一操作就由 notifyActivity 整个中断（它用 reset 突破 sleep 优先级）。
       if (currentState() === 'sleep') {
-        scheduleNext();
+        if (cfg.napLoop) {
+          scheduleOnce(wakeFromNap, randomBetween(cfg.sleepMinMs, cfg.sleepMaxMs));
+        } else {
+          scheduleNext();
+        }
         return;
       }
 
       // 入睡优先（用户空闲更久）
       if (userIdle >= cfg.sleepAfterMs) {
-        if (trySet('sleep', 'idle-timeout')) return;
+        if (trySet('sleep', 'idle-timeout')) {
+          // 立刻排定"醒来"的时刻，形成随机循环（scheduleOnce 会清掉旧的检查定时器）
+          if (cfg.napLoop) {
+            scheduleOnce(wakeFromNap, randomBetween(cfg.sleepMinMs, cfg.sleepMaxMs));
+          }
+          return;
+        }
         scheduleNext();
         return;
       }
@@ -185,11 +219,41 @@
         currentWalkTarget = null;
         if (trySet('walk', 'wander')) {
           walkStartedAt = now();
-          timer = schedule(endWalk, cfg.walkDurationMs);
+          scheduleOnce(endWalk, cfg.walkDurationMs);
           return;
         }
       }
       scheduleNext();
+    }
+
+    /** 随机区间取值（含下限不含上限，保证 lo>hi 时也安全） */
+    function randomBetween(lo, hi) {
+      const a = Math.max(0, lo);
+      const b = Math.max(a, hi);
+      return Math.round(a + random() * (b - a));
+    }
+
+    /** 从小睡里醒来 → 回到 idle 待机一段时间，再看是否继续睡 */
+    function wakeFromNap() {
+      timer = null;
+      if (!enabled) return;
+      if (!canTakeOver()) {
+        scheduleNext();
+        return;
+      }
+      // sleep 优先级 20 > idle 0，必须用 reset 才能醒来
+      if (currentState() === 'sleep') {
+        if (typeof behavior.reset === 'function') {
+          if (behavior.reset()) emit('idle', 'nap-wake');
+        }
+      }
+      // 醒来待机一会；这段时间**不重置 idleSince**，
+      // 否则每次小睡都会把"用户空闲"清零，睡眠循环就永远走不到下一轮
+      scheduleOnce(() => {
+        timer = null;
+        if (!enabled) return;
+        onWake();
+      }, randomBetween(cfg.awakeMinMs, cfg.awakeMaxMs));
     }
 
     function endWalk() {
@@ -205,8 +269,7 @@
     function celebrate(reason) {
       if (!enabled || !canTakeOver()) return false;
       if (!trySet('celebrate', reason || 'celebrate')) return false;
-      clearTimer();
-      timer = schedule(() => {
+      scheduleOnce(() => {
         timer = null;
         if (!enabled) return;
         backToIdle();

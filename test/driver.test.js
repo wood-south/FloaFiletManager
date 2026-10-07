@@ -121,8 +121,15 @@ console.log('\n[2] 长时间空闲 → 入睡');
     assert.strictEqual(b.get(), 'sleep');
     assert.ok(changes.includes('sleep'));
   });
-  ok('睡后不再排定定时器（等用户唤醒，不做无谓轮询）', () => {
-    assert.strictEqual(clock.pendingCount(), 0);
+  ok('入睡后会排定「醒来」定时器（待机↔睡觉随机循环）', () => {
+    // 阶段 8.7 起 sleep 不再是终点：睡一会就醒一会，随机往复。
+    // 这不只是行为偏好，也顺带修掉「睡着后驱动停摆、桌宠可能永远醒不过来」。
+    assert.strictEqual(clock.pendingCount(), 1, '应排定一个醒来定时器');
+  });
+  ok('小睡结束会回到 idle（不是一直睡着）', () => {
+    // 默认 sleepMinMs=8s：睡够才会醒，所以这里要推进足够长的时间
+    clock.advance(10000);
+    assert.strictEqual(b.get(), 'idle', '实际 ' + b.get());
   });
 }
 
@@ -288,6 +295,92 @@ console.log('\n[8] 稳健性');
     });
     d3.enable();
     assert.doesNotThrow(() => d3.disable());
+  });
+}
+
+console.log('\n[9] 待机 ↔ 睡觉随机循环（阶段 8.7）');
+{
+  const clock = makeClock();
+  const { b } = makeBehavior();
+  let i = 0;
+  const seq = [0, 0.5, 0];
+  const d = driver.createBehaviorDriver({
+    behavior: b, schedule: clock.schedule, cancel: clock.cancel, now: clock.now,
+    random: () => seq[(i++) % seq.length],
+    sleepAfterMs: 1000,
+    sleepMinMs: 800, sleepMaxMs: 800,   // 固定成好断言的值
+    awakeMinMs: 400, awakeMaxMs: 400,
+    walkMinDelayMs: 999999, walkMaxDelayMs: 999999  // 关掉漫游，只看睡/醒
+  });
+  d.enable();
+  ok('空闲超过阈值后入睡', () => {
+    clock.advance(1200);
+    assert.strictEqual(b.get(), 'sleep', '实际 ' + b.get());
+  });
+
+  /* 用「小步长采样」观察一个完整周期，而不是赌某个时刻的状态：
+     睡眠 800 + 清醒 400 = 1200ms 一轮。 */
+  const seen = [];
+  let last = b.get();
+  let minSegment = Infinity;
+  let lastSwitchAt = clock.now();
+  for (let n = 0; n < 200; n++) {
+    clock.advance(50);
+    const cur = b.get();
+    if (cur !== last) {
+      const seg = clock.now() - lastSwitchAt;
+      if (seen.length > 0) minSegment = Math.min(minSegment, seg);
+      seen.push(cur);
+      last = cur;
+      lastSwitchAt = clock.now();
+    }
+  }
+  ok('在多个周期内往复出现 sleep 与 idle', () => {
+    assert.ok(seen.includes('sleep'), '未再入睡');
+    assert.ok(seen.includes('idle'), '未醒来');
+    // 10 秒 / 1200ms ≈ 8 轮，切换次数应是两位数
+    assert.ok(seen.length >= 6, '切换次数太少: ' + seen.length);
+  });
+  ok('不会高频横跳（每段至少数百毫秒）', () => {
+    // 这是本模块最容易出的问题：两条定时器链互相打断，
+    // 表现为 sleep↔idle 每几十毫秒翻一次。
+    assert.ok(minSegment >= 300,
+      '出现 ' + minSegment + 'ms 的短段，疑似定时器互相打断');
+  });
+  ok('任意时刻最多只有一个待定定时器（单一调度入口）', () => {
+    assert.ok(clock.pendingCount() <= 1,
+      '待定定时器 ' + clock.pendingCount() + ' 个（多了会互相打断）');
+  });
+  ok('用户操作能中断小睡循环', () => {
+    if (b.get() !== 'sleep') {
+      // 推进到下一段睡眠
+      for (let n = 0; n < 200 && b.get() !== 'sleep'; n++) clock.advance(50);
+    }
+    assert.strictEqual(b.get(), 'sleep', '前置条件：应处于睡眠');
+    d.notifyActivity('user');
+    assert.strictEqual(b.get(), 'idle', '未能唤醒');
+    clock.advance(300);
+    assert.strictEqual(b.get(), 'idle', '刚唤醒就立刻又睡');
+  });
+  ok('可关闭 napLoop（回到「睡了就不动」的旧行为）', () => {
+    const clock2 = makeClock();
+    const { b: b2 } = makeBehavior();
+    const d2 = driver.createBehaviorDriver({
+      behavior: b2, schedule: clock2.schedule, cancel: clock2.cancel, now: clock2.now,
+      random: () => 0, sleepAfterMs: 1000, napLoop: false
+    });
+    d2.enable();
+    clock2.advance(1200);
+    assert.strictEqual(b2.get(), 'sleep');
+    clock2.advance(60000);
+    assert.strictEqual(b2.get(), 'sleep', 'napLoop=false 时不应自己醒');
+  });
+  ok('睡眠与清醒时长是随机的（配置区间有效）', () => {
+    const c = driver.DEFAULTS;
+    assert.ok(c.sleepMinMs > 0 && c.sleepMaxMs >= c.sleepMinMs, '睡眠区间非法');
+    assert.ok(c.awakeMinMs > 0 && c.awakeMaxMs >= c.awakeMinMs, '清醒区间非法');
+    // 用户要求"不要太快"：单次睡眠至少数秒
+    assert.ok(c.sleepMinMs >= 5000, '睡眠太短，会显得焦躁');
   });
 }
 

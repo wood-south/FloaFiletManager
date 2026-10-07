@@ -394,5 +394,100 @@ console.log('\n[7] loadActiveSkin：主进程异常也不能让桌宠消失');
     assert.strictEqual(applied[0], skin);
   });
 
-  console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
+  console.log('\n[8] 方向变体：拖拽/走路按方向取不同帧（阶段 8.7）');
+{
+  const img = { width: 256, height: 64 };
+  const canvas = makeCanvas();
+  const r = skinRender.createSkinRenderer({
+    canvas,
+    imageLoader: immediateLoader(img),
+    getStates: () => behavior.STATES,
+    onFallback: (w) => fallbacks.push(w)
+  });
+  fallbacks.length = 0;
+
+  const skin = spriteSkin({
+    clips: {
+      idle: { frames: [0], fps: 10 },
+      drag: { frames: [1], fps: 10 },
+      'drag-left': { frames: [2], fps: 10 },
+      'drag-up': { frames: [3], fps: 10 },
+      walk: { frames: [4], fps: 10 },
+      'walk-right': { frames: [5], fps: 10 }
+    }
+  });
+
+  /* spriteSkin 的帧是 64×64、图集 256×64 → 4 列。
+     帧号 → 源坐标：(n%4)*64, floor(n/4)*64 */
+  ok('不带方向时用基础 clip', () => {
+    r.apply(skin);
+    assert.strictEqual(r.setState('drag', 0), true);
+    canvas.calls.length = 0;
+    r.tick(0);
+    const draw = canvas.calls.find((c) => c[0] === 'draw');
+    assert.deepStrictEqual([draw[2], draw[3]], [64, 0], '基础 drag 应为第 1 帧');
+  });
+  ok('setDirection 切到 drag-left 后画的是该变体', () => {
+    assert.strictEqual(r.setDirection('drag', 'left'), true);
+    canvas.calls.length = 0;
+    r.tick(0);
+    const draw = canvas.calls.find((c) => c[0] === 'draw');
+    assert.deepStrictEqual([draw[2], draw[3]], [128, 0], 'drag-left 应为第 2 帧');
+  });
+  ok('切方向后即使帧号相同也会重绘（不能停在旧动作）', () => {
+    // 再切到 up（第 3 帧）→ 必然不同；关键是验证 lastFrame 被重置
+    r.setDirection('drag', 'up');
+    assert.ok(r.tick(0), '切方向后应重绘');
+  });
+  ok('方向不影响其它状态', () => {
+    r.setDirection('walk', 'right');
+    assert.strictEqual(r.setState('walk', 100), true);
+    canvas.calls.length = 0;
+    r.tick(100);
+    const draw = canvas.calls.find((c) => c[0] === 'draw');
+    assert.deepStrictEqual([draw[2], draw[3]], [64, 64], 'walk-right 应为第 5 帧');
+  });
+  ok('没有对应方向变体时回退到基础 clip（旧皮肤包兼容）', () => {
+    assert.strictEqual(r.setDirection('walk', 'left'), true);
+    canvas.calls.length = 0;
+    r.tick(0);
+    const draw = canvas.calls.find((c) => c[0] === 'draw');
+    assert.deepStrictEqual([draw[2], draw[3]], [0, 64], 'walk 无 left 变体 → 回退第 4 帧');
+  });
+  ok('重复设置同一方向返回 false（不做无谓重建）', () => {
+    assert.strictEqual(r.setDirection('walk', 'left'), false);
+  });
+  ok('传 null 方向会清掉该状态的方向（回到基础 clip）', () => {
+    assert.strictEqual(r.setDirection('walk', null), true);
+    assert.strictEqual(r.directions().walk, undefined);
+  });
+  ok('方向记录可查询（便于诊断）', () => {
+    r.setDirection('drag', 'down');
+    assert.strictEqual(r.directions().drag, 'down');
+  });
+  ok('up 与 top 视为同一方向（贴边语境常说上边）', () => {
+    r.setDirection('drag', 'up');
+    assert.strictEqual(r.setDirection('drag', 'top'), false, 'top 应等价于 up，不算变化');
+  });
+  ok('换皮肤会清掉方向记录（新皮肤未必有同样的变体）', () => {
+    r.setDirection('drag', 'left');
+    r.apply(spriteSkin());
+    assert.deepStrictEqual(r.directions(), {}, '方向记录未清空');
+  });
+  ok('非法方向不抛错', () => {
+    [null, undefined, '', 'nope', 42].forEach((bad) => {
+      assert.doesNotThrow(() => r.setDirection('drag', bad), 'dir=' + JSON.stringify(bad));
+    });
+  });
+  ok('未 apply 皮肤时 setDirection 不抛错', () => {
+    const bare = skinRender.createSkinRenderer({
+      canvas: makeCanvas(),
+      imageLoader: immediateLoader(),
+      getStates: () => behavior.STATES
+    });
+    assert.doesNotThrow(() => bare.setDirection('drag', 'left'));
+  });
+}
+
+console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
 })();

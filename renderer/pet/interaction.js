@@ -87,6 +87,18 @@
       // 最后一帧的位移就会被丢弃（松手瞬间「少走一截」）。
       if (dx === 0 && dy === 0) return;
       if (typeof opts.moveWindow === 'function') opts.moveWindow(dx, dy);
+      /* 上报拖动方向，供壳层选择 drag-up/down/left/right 动画变体。
+         取**主轴**并且带一点记忆（dx===0 时不算"向右"），
+         否则纯竖直拖动会被误判成水平方向。 */
+      if (typeof opts.onDragDirection === 'function') {
+        const ax = Math.abs(dx);
+        const ay = Math.abs(dy);
+        let dir = null;
+        if (ax < 1 && ay < 1) dir = null;
+        else if (ay >= ax) dir = dy < 0 ? 'up' : 'down';
+        else dir = dx < 0 ? 'left' : 'right';
+        if (dir) opts.onDragDirection(dir);
+      }
     }
 
     function onPointerDown(e) {

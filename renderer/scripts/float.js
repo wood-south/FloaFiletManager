@@ -84,6 +84,67 @@ const behaviorDriver = window.PET_DRIVER
 
 if (behaviorDriver) behaviorDriver.enable();
 
+/* ========== 走动（阶段 8.7） ==========
+   walk 期间**真正移动窗口**：自由状态左右漫游；吸附到屏幕边缘/Dock 时
+   沿那条边滑动（左右贴边就竖直走，避免横向把自己拽离吸附）。
+
+   与 driver 的分工：driver 决定「何时进入 walk、走多久」，
+   wanderer 决定「往哪走、撞边怎么办」。 */
+/** 壳层维护的窗口位置（撞墙判定用；读不到时 wander 会跳过判定）。必须先声明。 */
+let petWindowPos = null;
+
+const wanderer = window.PET_WANDER
+  ? window.PET_WANDER.createWanderer({
+    // 复用既有的位移通道（主进程会做边界钳制）
+    move: (dx, dy) => window.electronAPI?.moveWindow?.(dx, dy),
+    orientation: () => currentOrientation(),
+    // 撞墙判定用「位移是否生效」，而不是自己算边界 ——
+    // 这样与主进程的钳制永远一致，不会因为两边理解不同而抖动
+    readPos: () => petWindowPos
+  })
+  : null;
+
+/** 当前吸附朝向：贴边用 snap-*，Dock 用 dock-* */
+function currentOrientation() {
+  if (!petBody) return null;
+  for (const edge of ['left', 'right', 'top', 'bottom']) {
+    if (petBody.classList.contains('snap-' + edge)) return edge;
+  }
+  for (const side of ['left', 'right', 'top', 'bottom']) {
+    if (petBody.classList.contains('dock-' + side)) return 'dock-' + side;
+  }
+  return null;
+}
+
+if (wanderer) {
+  // 状态变化时启停走动，并让渲染器按行走方向选 walk-left / walk-right
+  behavior.subscribe((info) => {
+    if (info.state === 'walk') {
+      wanderer.start();
+    } else if (wanderer.isRunning()) {
+      wanderer.stop();
+    }
+    if (skinRenderer && info.state === 'walk') {
+      skinRenderer.setDirection('walk', wanderer.direction());
+    }
+  });
+  // 走动节拍：另起一个轻量循环（只在 walk 期间真正做事）
+  let lastWanderAt = 0;
+  const wanderLoop = (now) => {
+    if (wanderer.isRunning()) {
+      const dt = lastWanderAt ? now - lastWanderAt : 40;
+      wanderer.tick(dt);
+      // 走动中方向可能因撞边反转，及时同步给渲染器
+      if (skinRenderer) skinRenderer.setDirection('walk', wanderer.direction());
+      // 主进程移动后位置会变；读窗口坐标作为下一帧的参照
+      petWindowPos = { x: window.screenX, y: window.screenY };
+    }
+    lastWanderAt = now;
+    requestAnimationFrame(wanderLoop);
+  };
+  requestAnimationFrame(wanderLoop);
+}
+
 /* ========== 点击穿透：透明区域允许鼠标穿透到桌面 ==========
    仲裁实现见 renderer/pet/penetration.js：以「交互原因集合」取代原先
    !menuOpen && !quitOpen && !modalActive && !isDragging 的布尔链。
@@ -194,6 +255,11 @@ function closeQuit() {
 const interaction = window.createInteraction({
   setCursor: (cursor) => setPetCursor(cursor),
   moveWindow: (dx, dy) => window.electronAPI.moveWindow(dx, dy),
+  /* 拖动方向 → 选择 drag-up / drag-down / drag-left / drag-right 动画变体。
+     皮肤没提供方向变体时会自动回退到 drag（见 renderer/pet/direction.js）。 */
+  onDragDirection: (dir) => {
+    if (skinRenderer) skinRenderer.setDirection('drag', dir);
+  },
   onSavePosition: () => {
     wasSnapped = false; // 拖动过，离开时不弹回贴边
     window.electronAPI.saveWindowPosition();

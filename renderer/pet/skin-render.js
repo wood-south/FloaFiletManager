@@ -61,6 +61,37 @@
     let ready = false;
     let lastFrame = -1;
     let drawnCount = 0;
+    /* 当前方向（每个状态一个）：拖拽/走路/贴边都可能是带方向的。
+       渲染器只负责按方向重算 clips，方向从哪来由壳层决定。 */
+    const directions = {};
+
+    /** 取方向解析器（浏览器挂 window；Node 下按需 require） */
+    function directionApiOf() {
+      if (global.PET_DIRECTION) return global.PET_DIRECTION;
+      /* eslint-disable no-undef */
+      if (typeof module !== 'undefined' && module.exports) {
+        try {
+          const d = require('./direction');
+          if (d) {
+            global.PET_DIRECTION = d;
+            return d;
+          }
+        } catch (_) { /* 落到 null */ }
+      }
+      /* eslint-enable no-undef */
+      return null;
+    }
+
+    /** 把皮肤声明的 clips 按当前方向重算成「状态名 → 帧」 */
+    function buildClips() {
+      const frameApi = framesApiOf();
+      const stateTable = getStates();
+      const raw = (skin && skin.clips) || {};
+      const dirApi = directionApiOf();
+      // 没有方向解析器（理论上不会）时退回原行为：直接合并
+      const resolved = dirApi ? dirApi.applyDirections(raw, directions) : raw;
+      return frameApi.resolveClips(stateTable, resolved);
+    }
 
     function getStates() {
       if (typeof o.getStates === 'function') return o.getStates();
@@ -124,6 +155,8 @@
         player = null;
         clips = null;
         atlas = null;
+        // 换皮肤时清掉方向记录：新皮肤不一定有同样的方向变体
+        Object.keys(directions).forEach((k) => delete directions[k]);
 
         if (!skin || !skin.render) {
           fallback('no-skin');
@@ -145,7 +178,7 @@
         }
 
         atlas = { frameWidth: a.frameWidth, frameHeight: a.frameHeight };
-        clips = frames.resolveClips(getStates(), skin.clips);
+        clips = buildClips();
         player = frames.createFramePlayer({ clips, initialState: o.initialState || 'idle' });
         sizeCanvas();
 
@@ -164,6 +197,39 @@
 
       /** 当前皮肤（可能为 null） */
       current() { return skin; },
+
+      /**
+       * 设置某个状态的方向（例如 { drag: 'left' } / { walk: 'right' }）。
+       *
+       * 方向只影响「取哪个 clip 变体」：drag-left 存在就用它，
+       * 否则回退到 drag。方向变化会**立即重建 clips**，
+       * 并重置播放进度 —— 否则换了方向还停在旧动作的帧上，
+       * 看起来像"没切"（与 setState 不重置 lastFrame 是同一类坑）。
+       * @returns {boolean} 是否有实际变化
+       */
+      setDirection(state, dir) {
+        if (!state) return false;
+        const dirApi = directionApiOf();
+        const normalized = dirApi ? dirApi.normalizeDirection(dir) : null;
+        const prev = directions[state] || null;
+        if (prev === normalized) return false;
+        if (normalized === null) delete directions[state];
+        else directions[state] = normalized;
+
+        if (!player) return true;
+        const framesApi = framesApiOf();
+        if (!framesApi) return true;
+        // 记录当前状态，重建后要把播放进度重置到该状态
+        const cur = player.current();
+        clips = buildClips();
+        player = framesApi.createFramePlayer({ clips, initialState: cur });
+        lastFrame = -1;
+        return true;
+      },
+
+      /** 供诊断：当前记录的各状态方向 */
+      directions() { return Object.assign({}, directions); },
+
       isFrameMode() { return ready; },
       /** 供测试/诊断：实际绘制过多少帧 */
       drawnFrames() { return drawnCount; },
