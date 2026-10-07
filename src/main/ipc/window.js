@@ -109,15 +109,27 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     if (newX === bounds.x && newY === bounds.y) {
       // 松手后重新评估吸附：**先清除拖动抑制**，否则搜索会被自己挡掉
       petDragging = false;
+      const hadRelation = !!floatSnapToDock;
       searchDockSnap({ requireExistingRelation: false });
       const afterBounds = floatWindow.getBounds();
       newX = afterBounds.x;
       newY = afterBounds.y;
       dockSnapSide = floatSnapToDock ? floatSnapToDock.side : null;
+      // 原本吸附、现在脱离了：立即清除宠物朝向。
+      // 否则 snap-* / dock-* 旋转类会残留，宠物会一直以侧躺/倒立姿态留在桌面上
+      // （用户反馈「下左右」方向上的异常姿态即由此产生）。
+      if (hadRelation && !floatSnapToDock) {
+        try {
+          floatWindow.webContents.send('dock-snap-changed', null);
+        } catch (_) {}
+      }
     } else {
       // 触发了屏幕边缘贴边，不与 Dock 吸附叠加
       floatSnapToDock = null;
       dockSnapSide = null;
+      try {
+        floatWindow.webContents.send('dock-snap-changed', null);
+      } catch (_) {}
     }
 
     if (newX !== bounds.x || newY !== bounds.y) {
