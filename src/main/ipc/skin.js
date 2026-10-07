@@ -71,8 +71,14 @@ function register({ userDataDir, rootDir }) {
     }
   });
 
-  ipcMain.handle('import-skin', (event, { sourceDir } = {}) => {
+  /* 注意：这里**不能**在参数位置解构（`(event, { sourceDir } = {})`）。
+     默认值只在 `undefined` 时生效，当渲染层传来 `null` 时会抛出
+     "Cannot destructure property ... of null"，而那个异常发生在 try 之外，
+     于是渲染层拿到的是一个 reject（不是我们约定的 { success:false }），
+     主进程还会打一条无用的堆栈。改为在 try 内部安全取值。 */
+  ipcMain.handle('import-skin', (event, payload) => {
     try {
+      const sourceDir = payload && typeof payload === 'object' ? payload.sourceDir : null;
       if (!sourceDir || typeof sourceDir !== 'string') {
         return { success: false, error: '缺少源目录' };
       }
@@ -101,8 +107,10 @@ function register({ userDataDir, rootDir }) {
     }
   });
 
-  ipcMain.handle('export-skin', async (event, { skinId } = {}) => {
+  // 同上：不在参数位置解构，避免 payload 为 null 时在 try 之外抛错
+  ipcMain.handle('export-skin', async (event, payload) => {
     try {
+      const skinId = payload && typeof payload === 'object' ? payload.skinId : null;
       if (!skinId || typeof skinId !== 'string') {
         return { success: false, error: '缺少皮肤 id' };
       }

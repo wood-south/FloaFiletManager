@@ -724,9 +724,51 @@ id 就叫 `dock`，而 v2 又用 `dock` 作为 `dockSettings` 的分组名。两
 | 9.5 | **文档 ↔ 代码一致性断言**（`CAPABILITIES.md` 清单由测试核对） | ✅ |
 | 9.5b | `docs/CAPABILITIES.md`（新增） | ✅ |
 | 9.2 | `lint` 纳入 HTML/CSS 格式检查（`prettier --check`） | ✅ |
-| 9.1 | 为其余模块补单测 | ⬜ 已有 19 个自检脚本、510 项断言 |
+| 9.1 | IPC 处理器**行为**测试 + 参数健壮性防回归 | ✅ |
 | 9.4 | `docs/` 统一校对：`ARCHITECTURE.md`、`IPC_REFERENCE.md`、README 补皮肤章节 | ⬜ |
 | 9.5c | 发布前「文档声称 vs 工作区实际」核对步骤 | ⬜ |
+
+**9.1 IPC 处理器行为测试（本轮完成）**
+
+此前的契约测试只验证「注册了哪些通道」，**不验证「调用之后真的做了什么」**——
+通道存在不等于通道可用。本轮把 `ipcMain.handle` 的注册回调抓下来直接调用，
+配合真实临时目录与 stub 的 `dialog`，验证端到端行为：
+
+- **成功路径**：选择目录 → 经授权 → 导入 → 文件真的落盘到 `userData/pets/<id>`
+  → `list-skins` 真的能列出 → 导出后内容可再次导入
+- **安全不变量**（比"返回失败"更强的要求）：
+  - 未授权路径的导入必须在**打开选择框之前**就被拒绝
+    —— 否则等于给了渲染层一条「弹框骗用户点确定」的路径
+  - 被拒绝的导入**不得在磁盘上留下任何东西**，也不得残留 `.importing-*` 临时目录
+  - 导出先校验皮肤存在与 id 合法，**再**弹选择框；`../evil`、`a/b`、`..` 全部被拒
+- **永不抛错**：处理器对 `null` / `undefined` / 数字 / 字符串 / 数组 / 布尔
+  等 8 种垃圾入参既不抛错也不 reject
+
+**由此抓到一类真实缺陷（本轮最有价值的产出）**：形如
+
+```js
+ipcMain.handle('x', (event, { foo } = {}) => { … })
+```
+
+的写法，默认值 `{}` **只对 `undefined` 生效**。渲染层传 `null` 时会抛
+`Cannot destructure property 'foo' of null`，而该异常发生在**参数求值阶段**、
+**在函数体的 try 之外** —— 于是：渲染层拿到的是 reject（不是约定的
+`{ success:false }`）、主进程打一条无用的堆栈、且**无法被处理器内部的
+try/catch 兜住**。
+
+触发与清查过程：
+
+1. 在 `import-skin` / `export-skin` 的行为测试中**先被触发**（各 1 处）；
+2. 顺着这个模式**静态清查全部主进程源码**，在 `config.js` 里又查出 **3 处**
+   （`capability-get` / `capability-set` / `capability-enable`）；
+3. 全部改为在函数体内安全取值：`const { foo } = (payload && typeof payload === 'object') ? payload : {}`；
+4. 补一个**防回归**测试：静态扫描 `src/main/**` 禁止该写法再次出现，
+   并且**同时断言扫描器本身能命中样例**（否则正则写错会让这道防线永远是空的）。
+
+**检测（本轮）**：新增 `test/skin-ipc-behavior.test.js` **28 项断言**、
+`test/ipc-handler-robustness.test.js` **12 项断言**。
+自检脚本 19 → **21 个**，断言 510 → **550 项**；
+`npm test` 全绿、`npm run lint` 全绿（含 CSS/HTML 格式检查、`node --check` 60 个文件）。
 
 **9.2 lint 纳入 HTML/CSS（本轮完成）**
 
@@ -807,10 +849,13 @@ HTML 的 `class`/`script`/`link`/`id` 声明集合完全一致。
 - **9.4 文档校对未做**：`TECHNICAL_GUIDE.md`（774 行）/`PROBLEM_SOLUTIONS.md`（723 行）
   内容尚可，但 `README.md` 缺「皮肤」章节；`ARCHITECTURE.md`、`IPC_REFERENCE.md`
   未新建（当前 `CAPABILITIES.md` 已覆盖 IPC 契约部分）。
-- **9.1 补齐单测**：现有 19 个自检脚本 / 510 项断言已覆盖吸附几何、动画状态机、
-  皮肤校验、能力契约、配置迁移、多屏选屏、皮肤包安全、日志落盘、文档一致性；
-  尚未覆盖的是 IPC 处理器的**行为**（目前只验证「注册了哪些通道」，
-  不验证「调用后做什么」）。
+- **阶段 8 的界面与渲染部分**：8.3 设置页「桌宠/商城」页签、8.4 试穿预览、
+  8.6 换肤渲染（换 SVG / atlas 帧绘制）均未做。这三项**必须真机验证**
+  （本轮之前的开发环境无法启动 Electron），因此刻意留待手测时一并完成。
+- **阶段 7 剩余**：7.1b（`autoFitDockWindow` 的容器宽度变量化，与滚动/裁剪耦合）、
+  7.3 磁贴放大、7.4 自动隐藏、7.6 拖拽排序。
+- **阶段 3 剩余**：SVG 猫的 `colorMap` 换色未生效（颜色仍硬编码）、
+  `walk`/`sleep`/`celebrate` 无驱动、`docs/ANIMATION_SPEC.md` / `THEME_SPEC.md` 未写。
 
 ---
 

@@ -211,7 +211,11 @@ function register({ loadConfig, saveConfig }) {
     return config;
   }
 
-  ipcMain.handle('capability-get', (event, { capabilityId, key } = {}) => {
+  /* 注意：不在参数位置解构。`(event, { x } = {})` 的默认值只对 undefined 生效，
+     渲染层若传 null 会抛 "Cannot destructure property ... of null"，
+     且异常发生在函数体外（连 try 都来不及拦），渲染层拿到的是 reject。 */
+  ipcMain.handle('capability-get', (event, payload) => {
+    const { capabilityId, key } = (payload && typeof payload === 'object') ? payload : {};
     if (!SAFE_ID.test(String(capabilityId || ''))) return undefined;
     if (!SAFE_KEY.test(String(key || ''))) return undefined;
     const config = loadConfig();
@@ -219,7 +223,8 @@ function register({ loadConfig, saveConfig }) {
     return store ? store[key] : undefined;
   });
 
-  ipcMain.handle('capability-set', (event, { capabilityId, key, value } = {}) => {
+  ipcMain.handle('capability-set', (event, payload) => {
+    const { capabilityId, key, value } = (payload && typeof payload === 'object') ? payload : {};
     // 只接受 JSON 基本类型，避免把任意对象写进配置
     const isPrimitive = value === null || ['boolean', 'number', 'string'].includes(typeof value);
     if (!SAFE_ID.test(String(capabilityId || ''))) {
@@ -262,7 +267,8 @@ function register({ loadConfig, saveConfig }) {
     }
   });
 
-  ipcMain.handle('capability-enable', (event, { capabilityId, enabled } = {}) => {
+  ipcMain.handle('capability-enable', (event, payload) => {
+    const { capabilityId, enabled } = (payload && typeof payload === 'object') ? payload : {};
     if (!SAFE_ID.test(String(capabilityId || ''))) {
       return { success: false, error: '非法的能力 id' };
     }
