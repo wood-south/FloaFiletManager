@@ -221,7 +221,7 @@
     return { get, set, reset, describe, subscribe, dispose };
   }
 
-  global.PET_BEHAVIOR = {
+  const API = {
     STATES,
     DEFAULT_STATE,
     hasState,
@@ -230,4 +230,18 @@
     canTransition,
     createBehavior
   };
+
+  // 浏览器：挂到 window，供渲染脚本直接使用
+  global.PET_BEHAVIOR = API;
+
+  /* Node（主进程）：阶段 8 的皮肤导入校验需要「合法状态名清单」，
+     让主进程 require 状态表本身，而不是在别处复制一份状态名列表 ——
+     否则新增状态时两处会分叉。
+     本文件在浏览器里以 <script> 加载（没有 module），因此先判断存在性；
+     这里的 module/require 是给 Node 用的，不是浏览器代码。 */
+  /* eslint-disable no-undef */
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = API;
+  }
+  /* eslint-enable no-undef */
 })(typeof window !== 'undefined' ? window : globalThis);

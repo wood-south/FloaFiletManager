@@ -42,19 +42,35 @@
     return true;
   }
 
-  /** 合法状态名集合由状态表提供；拿不到时用内置清单兜底 */
-  function knownStates() {
+  /** 合法状态名集合；优先用调用方显式传入的列表（主进程用它替代状态表），
+      其次读状态表模块（Node 下 require、浏览器下读全局），最后用内置清单兜底 */
+  const FALLBACK_STATES = ['idle', 'sleep', 'walk', 'celebrate', 'interact', 'snap', 'drag'];
+  function knownStates(override) {
+    if (Array.isArray(override) && override.length > 0) return override;
+    // Node：状态表与本校验器在同一目录，直接 require，避免依赖全局副作用顺序
+    /* eslint-disable no-undef */
+    if (typeof module !== 'undefined' && module.exports) {
+      try {
+        const b = require('./behavior');
+        if (b && b.STATES) return Object.keys(b.STATES);
+      } catch (_) { /* 落到下面的回退 */ }
+    }
+    /* eslint-enable no-undef */
     const table = global.PET_BEHAVIOR && global.PET_BEHAVIOR.STATES;
     if (table) return Object.keys(table);
-    return ['idle', 'sleep', 'walk', 'celebrate', 'interact', 'snap', 'drag'];
+    return FALLBACK_STATES.slice();
   }
 
   /**
    * 校验并归一化一个皮肤对象。
    * @param {object} raw 解析后的 pet.json
+   * @param {object} [options]
+   *   - states: 合法状态名数组。主进程没有渲染侧的状态表，用它显式传入，
+   *     避免把状态表复制一份到主进程（单一事实来源仍在 pet/behavior.js）。
    * @returns {{ok:boolean, errors:string[], warnings:string[], skin:object|null}}
    */
-  function validatePetSkin(raw) {
+  function validatePetSkin(raw, options) {
+    const opts = options || {};
     const errors = [];
     const warnings = [];
 
@@ -157,7 +173,7 @@
     }
 
     // ---- clips ----
-    const states = knownStates();
+    const states = knownStates(opts.states);
     const clips = {};
     if (raw.clips !== undefined && !isPlainObject(raw.clips)) {
       warnings.push('clips 不是对象，已忽略全部动作覆盖');
@@ -252,10 +268,24 @@
     return out;
   }
 
-  global.PET_SKIN = {
+  const API = {
     validatePetSkin,
     mergeClips,
     isSafeRelPath,
+    FALLBACK_STATES: FALLBACK_STATES.slice(),
     DEFAULTS: { fps: DEFAULT_FPS, size: DEFAULT_SIZE, soundExt: SOUND_EXT }
   };
+
+  // 浏览器：挂到 window，供渲染脚本直接使用
+  global.PET_SKIN = API;
+
+  /* Node（主进程）：同一份实现通过 require 复用。
+     阶段 8 的皮肤导入校验跑在主进程（安全边界），如果为此再写一份校验逻辑，
+     两处迟早会分叉 —— 因此这里让同一份代码同时支持两种加载方式。
+     主进程没有渲染侧的状态表，调用方通过 options.states 显式传入。 */
+  /* eslint-disable no-undef */
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = API;
+  }
+  /* eslint-enable no-undef */
 })(typeof window !== 'undefined' ? window : globalThis);

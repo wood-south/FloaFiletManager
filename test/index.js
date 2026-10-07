@@ -5,6 +5,7 @@ module.exports = [
   { name: '主进程能力层契约 capabilities', file: 'ipc-contract.test.js' },
   { name: '配置结构 v1→v2 迁移 config-schema', file: 'config-migration.test.js' },
   { name: '多显示器选屏与钳制 display.js', file: 'display.test.js' },
+  { name: '皮肤包仓库 skin-store.js', file: 'skin-store.test.js' },
   { name: '共用 UI 原语 primitives.js', file: 'primitives.test.js' },
   { name: '能力层契约 capabilities.js + quick-upload', file: 'capabilities.test.js' },
   { name: '点击穿透仲裁 penetration.js', file: 'penetration.test.js' },
