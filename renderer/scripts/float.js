@@ -504,15 +504,29 @@ skinRenderer = window.PET_SKIN_RENDER
     canvas: petCanvas,
     // 加载失败/不可用时回调：确保内置 SVG 回到可见状态，绝不白屏
     onFallback: () => {
-      if (petCanvas) petCanvas.hidden = true;
-      if (petSvg) petSvg.hidden = false;
+      const img = petSvg?.parentElement?.querySelector('.pet-skin-img');
+      if (img) img.remove();
+      syncPetVisuals();
     },
-    onReady: () => {
-      if (petCanvas) petCanvas.hidden = false;
-      if (petSvg) petSvg.hidden = true;
-    }
+    onReady: () => syncPetVisuals()
   })
   : null;
+
+/** 按渲染器当前模式统一决定「画布 / 内置 SVG / 皮肤 SVG」谁显示。
+ *
+ *  为什么要有一个统一入口：显示切换原先散落在 onReady / onFallback /
+ *  applySkinToShell 三处，任何一条路径漏写就会**两只猫叠加**（用户实测就是这个现象）。
+ *  现在只有一个函数能改可见性，且每帧都会调用一次兜底。 */
+function syncPetVisuals() {
+  if (!skinRenderer) return;
+  const frameMode = skinRenderer.isFrameMode();
+  const skinImg = petSvg?.parentElement?.querySelector('.pet-skin-img') || null;
+  const usingSkinSvg = !!(skinImg && !skinImg.hidden);
+
+  if (petCanvas) petCanvas.hidden = !frameMode;
+  // 帧模式或皮肤 SVG 生效时，内置 SVG 必须让位
+  if (petSvg) petSvg.hidden = frameMode || usingSkinSvg;
+}
 
 /** 把皮肤自带的 SVG 装进画面（用 data: URL，受 CSP 限制不能直读本地文件） */
 function applySvgSkin(skin) {
@@ -531,7 +545,8 @@ function applySvgSkin(skin) {
     }
     img.src = url;
     img.hidden = false;
-    petSvg.hidden = true;
+    // 内置 SVG 的隐藏交给 syncPetVisuals 统一处理（这里不直接写 hidden，
+    // 否则又多了一处需要同步的地方，正是叠加 bug 的来源）
     return true;
   } catch (_) {
     return false;
@@ -543,16 +558,25 @@ function applySkinToShell(skin) {
   applySkinColors(skin);
 
   if (!skinRenderer) return;
-  // 先按 sprite 尝试；不成立时再考虑 svg；都没有则回到内置外观
+
+  // 先清掉上一次可能留下的皮肤 SVG，避免「换了皮肤但旧图还在」
+  const staleImg = petSvg?.parentElement?.querySelector('.pet-skin-img');
+  if (staleImg) staleImg.remove();
+
+  // 依次尝试：帧动画 → 皮肤 SVG → 内置 SVG
   const frameMode = skinRenderer.apply(skin);
-  if (frameMode) return;
+  if (frameMode) {
+    // 帧模式：等图集解码完成由 onReady 切显示；这里先别让旧画面留着
+    syncPetVisuals();
+    return;
+  }
 
-  const oldImg = petSvg?.parentElement?.querySelector('.pet-skin-img');
-  if (skin && skin.render && skin.render.kind === 'svg' && applySvgSkin(skin)) return;
+  if (skin && skin.render && skin.render.kind === 'svg' && applySvgSkin(skin)) {
+    syncPetVisuals();
+    return;
+  }
 
-  if (oldImg) oldImg.remove();
-  if (petCanvas) petCanvas.hidden = true;
-  if (petSvg) petSvg.hidden = false;
+  syncPetVisuals();
 }
 
 /** 应用皮肤的 colorMap 换色；无皮肤或换回内置时清掉，恢复内置配色 */
@@ -574,8 +598,69 @@ if (skinRenderer && window.PET_SKIN_RENDER) {
   window.PET_SKIN_RENDER
     .loadActiveSkin({ api: window.electronAPI, renderer: { apply: applySkinToShell } })
     .catch(() => { /* 皮肤加载失败不影响桌宠：内置外观继续用 */ });
-  // 播放循环：只在皮肤进入帧模式后才会真正绘制
-  window.PET_SKIN_RENDER.startLoop(skinRenderer);
+
+  /* 播放循环 + 每帧兜底。
+     可见性同步放在这里而不是只靠回调：回调只会在「状态刚变化」时跑一次，
+     一旦有任何路径漏写，就会出现两只猫叠加（用户实测过）。
+     每帧同步一次的成本极低（两个布尔比较），换来的是"永远不会叠加"。 */
+  window.PET_SKIN_RENDER.startLoop(skinRenderer, {
+    onTick: () => syncPetVisuals(),
+    onFinished: () => {
+      // 一次性状态（celebrate / interact）播完，让状态机回落，避免停在最后一帧。
+      // idle 优先级最低、打断不了它们，所以这里必须走 reset() 语义 ——
+      // behavior.set('idle') 会被状态机正确拒绝。
+      if (typeof behavior !== 'undefined' && behavior &&
+        typeof behavior.reset === 'function') {
+        const cur = behavior.get();
+        if (cur === 'celebrate' || cur === 'interact') behavior.reset();
+      }
+    }
+  });
+
+  /* 诊断出口：控制台执行 pitDebug() 可查看皮肤到底有没有生效 */
+  window.petDebug = () => {
+    const info = {
+      皮肤ID: skinRenderer.current() ? skinRenderer.current().id : null,
+      帧模式已就绪: skinRenderer.isFrameMode(),
+      渲染器当前状态: skinRenderer.state(),
+      状态机状态: behavior.describe().state,
+      已绘制帧数: skinRenderer.drawnFrames(),
+      画布尺寸: petCanvas ? petCanvas.width + 'x' + petCanvas.height : null,
+      画布可见: petCanvas ? !petCanvas.hidden : null,
+      内置SVG可见: petSvg ? !petSvg.hidden : null,
+      皮肤SVG存在: !!(petSvg && petSvg.parentElement &&
+        petSvg.parentElement.querySelector('.pet-skin-img')),
+      驱动已启用: behaviorDriver ? behaviorDriver.isEnabled() : null
+    };
+    console.log('[petDebug]', info);
+    return info;
+  };
+  console.log('[pet] 皮肤渲染已启动，控制台执行 petDebug() 可查看状态');
+
+  /* 逐个动作试播：控制台执行 petTest() 会依次切到七个状态、各停 1.6 秒。
+     用途：肉眼确认「每个动画都能播」，把「皮肤没生效」和「状态没切换」区分开。 */
+  window.petTest = () => {
+    const states = ['idle', 'walk', 'sleep', 'interact', 'celebrate', 'snap', 'drag'];
+    window.__petTestRunning = true;
+    console.log('[petTest] 依次试播: ' + states.join(' → '));
+    states.forEach((name, i) => {
+      setTimeout(() => {
+        // 直接驱动渲染器与状态机，绕过优先级限制，保证每个动作都看得到
+        if (skinRenderer) skinRenderer.setState(name, performance.now());
+        if (typeof behavior !== 'undefined' && behavior) {
+          // 低优先级状态（如 idle）用 reset 才能从高优先级切回
+          if (!behavior.set(name)) behavior.reset();
+        }
+        console.log('[petTest] ' + name);
+        if (i === states.length - 1) {
+          setTimeout(() => {
+            window.__petTestRunning = false;
+            console.log('[petTest] 结束，回到 idle');
+          }, 1600);
+        }
+      }, i * 1600);
+    });
+  };
 }
 
 /* 设置窗口换肤后通知浮窗（用户可能在设置里改了皮肤） */

@@ -266,6 +266,32 @@ console.log('\n[5] 状态切换与一次性状态');
   ok('未知状态被拒绝', () => {
     assert.strictEqual(r.setState('nope', 0), false);
   });
+  ok('切状态后即使帧号相同也必须重绘（否则画面停在旧动作上）', () => {
+    // idle 与 interact 的第 0 帧都是"当前状态的第一帧"，
+    // 但两者帧号不同；真正危险的是**两个状态起始帧号相同**的情况。
+    // 这里用两个帧号相同的 clip 直接验证 dedupe 被清掉。
+    const canvas2 = makeCanvas();
+    const r2 = skinRender.createSkinRenderer({
+      canvas: canvas2,
+      imageLoader: immediateLoader({ width: 128, height: 64 }),
+      getStates: () => behavior.STATES
+    });
+    r2.apply(spriteSkin({
+      clips: { idle: { frames: [0], fps: 1 }, walk: { frames: [0], fps: 1 } }
+    }));
+    r2.tick(0);
+    const afterFirst = canvas2.calls.length;
+    assert.ok(afterFirst > 0, '首帧应绘制');
+    // 同一帧号再次 tick 应跳过
+    canvas2.calls.length = 0;
+    r2.tick(10);
+    assert.strictEqual(canvas2.calls.length, 0, '同帧不应重复绘制');
+    // 切到另一个「第 0 帧号相同」的状态：必须重绘，否则看起来没切换
+    canvas2.calls.length = 0;
+    assert.strictEqual(r2.setState('walk', 100), true);
+    assert.ok(r2.tick(100), '切状态后应重绘（帧号相同也不能跳过）');
+    assert.ok(canvas2.calls.length > 0, '切状态后画面没有更新');
+  });
 }
 
 console.log('\n[6] startLoop 驱动播放');

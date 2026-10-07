@@ -390,4 +390,81 @@ console.log('\n[8] 自主行为接线（阶段 3 收尾：sleep/walk/celebrate �
   });
 }
 
+console.log('\n[9] 显隐切换只有一个入口（防「两只猫叠加」）');
+{
+  const floatJs2 = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+
+  ok('存在统一的 syncPetVisuals 函数', () => {
+    assert.ok(/function syncPetVisuals\(/.test(floatJs2), '缺少 syncPetVisuals');
+  });
+  ok('画布/内置SVG 的 hidden 只在 syncPetVisuals 里被写', () => {
+    // 抽出 syncPetVisuals 函数体，其余位置不应再直接写 petCanvas.hidden / petSvg.hidden
+    const start = floatJs2.indexOf('function syncPetVisuals(');
+    const end = floatJs2.indexOf('\n}', start);
+    const body = floatJs2.slice(start, end);
+    const outside = floatJs2.slice(0, start) + floatJs2.slice(end);
+    assert.ok(/petCanvas\.hidden\s*=/.test(body), 'syncPetVisuals 内应设置画布显隐');
+    assert.ok(/petSvg\.hidden\s*=/.test(body), 'syncPetVisuals 内应设置 SVG 显隐');
+
+    const strayCanvas = (outside.match(/petCanvas\.hidden\s*=/g) || []).length;
+    const straySvg = (outside.match(/petSvg\.hidden\s*=/g) || []).length;
+    assert.strictEqual(strayCanvas, 0,
+      'syncPetVisuals 之外还有 ' + strayCanvas + ' 处直接写 petCanvas.hidden，容易漏改导致叠加');
+    assert.strictEqual(straySvg, 0,
+      'syncPetVisuals 之外还有 ' + straySvg + ' 处直接写 petSvg.hidden，容易漏改导致叠加');
+  });
+  ok('帧模式下内置 SVG 一定让位（frameMode 或皮肤SVG 都隐藏它）', () => {
+    const start = floatJs2.indexOf('function syncPetVisuals(');
+    const body = floatJs2.slice(start, floatJs2.indexOf('\n}', start));
+    assert.ok(/frameMode\s*\|\|\s*usingSkinSvg/.test(body),
+      'syncPetVisuals 未把 frameMode 纳入隐藏条件');
+  });
+  ok('每帧都会同步一次显隐（startLoop 传了 onTick）', () => {
+    assert.ok(/onTick:\s*\(\)\s*=>\s*syncPetVisuals\(\)/.test(floatJs2),
+      '未把 syncPetVisuals 挂到 startLoop 的 onTick 上，回调漏写就会叠加');
+  });
+  ok('换皮肤前会清掉上一张皮肤 SVG（防旧图残留）', () => {
+    const start = floatJs2.indexOf('function applySkinToShell(');
+    const body = floatJs2.slice(start, floatJs2.indexOf('\n}', start));
+    assert.ok(/querySelector\('\.pet-skin-img'\)/.test(body), '未清理旧皮肤 SVG');
+    assert.ok(/staleImg\.remove\(\)/.test(body) || /oldImg\.remove\(\)/.test(body),
+      '未移除旧皮肤 SVG 元素');
+  });
+  ok('skin-render 的 startLoop 支持 onFinished（一次性状态回落）', () => {
+    const sr = fs.readFileSync(path.join(root, 'renderer', 'pet', 'skin-render.js'), 'utf8');
+    assert.ok(/onFinished/.test(sr), '未支持 onFinished');
+    assert.ok(/finishedNotified/.test(sr),
+      '未做「只通知一次」的保护，会在播完后每帧回调');
+  });
+  ok('壳层在一次性状态播完后用 reset() 回落（idle 打断不了它们）', () => {
+    // 精确切出 onFinished 的回调体：从 `{` 起按花括号配对找到结尾，
+    // 固定长度切片会切到后面的 petTest（那里确实有 behavior.set(name)）
+    const anchor = floatJs2.indexOf('onFinished:');
+    assert.ok(anchor > 0, '未找到 onFinished');
+    const open = floatJs2.indexOf('{', floatJs2.indexOf('=>', anchor));
+    let depth = 0;
+    let end = open;
+    for (let i = open; i < floatJs2.length; i++) {
+      if (floatJs2[i] === '{') depth++;
+      else if (floatJs2[i] === '}') {
+        depth--;
+        if (depth === 0) { end = i; break; }
+      }
+    }
+    const body = floatJs2.slice(open, end + 1);
+    assert.ok(body.length > 10 && body.length < 600, '回调体长度异常: ' + body.length);
+    // 必须去掉注释再断言：注释里正好写了 `behavior.set('idle') 会被拒绝`
+    // 作为说明，直接匹配会误判成"代码里用了 set('idle')"
+    const code = body.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.ok(/behavior\.reset\(\)/.test(code), '未调用 reset()，会停在最后一帧');
+    assert.ok(!/behavior\.set\(\s*'idle'\s*\)/.test(code),
+      "不能写 behavior.set('idle')：idle 优先级 0，会被状态机拒绝");
+  });
+  ok('提供 petDebug / petTest 诊断入口', () => {
+    assert.ok(/window\.petDebug\s*=/.test(floatJs2), '缺少 petDebug');
+    assert.ok(/window\.petTest\s*=/.test(floatJs2), '缺少 petTest');
+    assert.ok(/petDebug\(\)/.test(floatJs2) || /petDebug/.test(floatJs2));
+  });
+}
+
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));

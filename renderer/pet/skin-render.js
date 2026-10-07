@@ -170,7 +170,13 @@
 
       setState(name, nowMs) {
         if (!player) return false;
-        return player.setState(name, nowMs);
+        const changed = player.setState(name, nowMs);
+        /* 切状态后必须清掉「上一帧画的是什么」的记录。
+           否则当新状态的第 0 帧号恰好等于上一状态当前帧号时，
+           tick 会认为"这一帧刚画过"而跳过重绘 ——
+           表现就是**画面停在旧动作上、看起来动画没切换**。 */
+        if (changed) lastFrame = -1;
+        return changed;
       },
       state() {
         return player ? player.current() : null;
@@ -243,7 +249,11 @@
 
   /**
    * 驱动播放循环。返回 stop()。
-   * 与状态机配合：一次性状态播完后通过 onFinished 通知壳层回落。
+   * 与状态机配合：
+   *  - onTick(renderer)    每帧一次，无论是否进入帧模式都调用。
+   *    壳层用它做「可见性兜底」——只在状态变化时同步显示权是不够的，
+   *    任何一条路径漏写就会出现两只猫叠加。
+   *  - onFinished(state)   一次性状态播完时通知壳层回落。
    */
   function startLoop(renderer, options) {
     const o = options || {};
@@ -252,16 +262,23 @@
     const now = o.now || (() => (global.performance ? global.performance.now() : Date.now()));
     let running = true;
     let handle = null;
+    let finishedNotified = false;
 
     function step() {
       if (!running) return;
       const t = now();
       if (renderer.isFrameMode()) {
         renderer.tick(t);
-        if (typeof o.onFinished === 'function' && renderer.finishedAt(t)) {
-          o.onFinished(renderer.state());
+        const done = renderer.finishedAt(t);
+        // 只在「刚播完」的那一帧通知一次，否则每帧都会回调
+        if (done && !finishedNotified) {
+          finishedNotified = true;
+          if (typeof o.onFinished === 'function') o.onFinished(renderer.state());
+        } else if (!done) {
+          finishedNotified = false;
         }
       }
+      if (typeof o.onTick === 'function') o.onTick(renderer);
       handle = raf(step);
     }
     handle = raf(step);
