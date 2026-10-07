@@ -85,8 +85,22 @@
 | `npm test` | 顺序运行 `test/index.js` 中登记的所有自检脚本 |
 | `npm run check` | lint + test，阶段收尾必跑 |
 
-**当前自检脚本**：`test/guard.test.js`（22 项）、`test/primitives.test.js`（24 项）。
+**当前自检脚本**：`test/guard.test.js`（22 项）、`test/primitives.test.js`（24 项）、`test/dock-geometry.test.js`（17 项）、`test/system-encoding.test.js`（6 项）。
 **约定**：后续每个阶段新增的纯逻辑（吸附几何 `snap.js`、配置迁移、路径处理等）都要补对应 `*.test.js` 并登记到 `test/index.js`。
+
+---
+
+### 阶段 0.5：Dock 闪动、网络浮层裁剪与乱码（手测反馈修复）
+
+| 问题 | 根因 | 修复 |
+| --- | --- | --- |
+| **右键/开合 Dock 闪动** | 每次弹出/关闭都 resize 透明窗口；且 `expandForMenu` 用「面板宽度」`resizeDockWindow(panelW, 380)`，而 `autoFitDockWindow` 用 `panelW + 4`（`winBuffer`），窗口宽在 704↔700 间跳、面板抖动 2px | 窗口高度改为**启动时一次性预留**（`DOCK_RESERVED_HEIGHT = 420`）；常态下 `expandForMenu` **完全不做窗口操作**；`restoreAfterMenu` 受 `dockWindowOverflowed` 保护；`nextFrame()` 取代固定 `setTimeout(100)` |
+| **WiFi 浮层被裁剪** | 浮层高度随网络列表变化（约 200–340px），此前用固定高度扩展窗口 | 新增 `syncPopupWindowHeight()`，按浮层 `offsetHeight` **实测**计算所需高度 |
+| **网络信息乱码** | `chcp 65001` 让子进程输出 UTF-8，但 Node `exec` 未指定 encoding 时按系统代码页（GBK）解码 | 5 处 `chcp 65001` 调用统一补 `encoding: 'utf8'` |
+
+**检测**：ESLint 全绿；`npm test` 4 个脚本全部通过。新增的 `system-encoding.test.js` 当场又抓出 `connect`/`disconnect` 两处漏网编码问题。
+
+**提交**：`fix: 修复 Dock 开合闪动、网络浮层被裁剪与网络信息乱码`（`b81979d`）
 
 ---
 
