@@ -30,6 +30,7 @@ const ipcFiles = require('../ipc/files');
 const ipcIcons = require('../ipc/icons');
 const ipcWindow = require('../ipc/window');
 const ipcDialog = require('../ipc/dialog');
+const ipcSkin = require('../ipc/skin');
 const ipcSystem = require('../ipc/system');
 
 /**
@@ -127,6 +128,21 @@ const CAPABILITIES = [
       saveConfig: deps.saveConfig
     }),
     register: (deps) => ipcConfig.register(deps)
+  },
+
+  {
+    id: 'skins',
+    name: '皮肤包',
+    description: '内置/用户皮肤的列出、导入与导出（主进程侧安全边界）',
+    defaultEnabled: true,
+    channels: [
+      'list-skins', 'import-skin', 'export-skin', 'select-skin-directory'
+    ],
+    build: (deps) => ({
+      userDataDir: deps.userDataDir,
+      rootDir: deps.rootDir
+    }),
+    register: (deps) => ipcSkin.register(deps)
   },
 
   {

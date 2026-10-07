@@ -66,6 +66,8 @@ const fakeDeps = {
   saveConfig: noop,
   screen: electronStub.screen,
   app: electronStub.app,
+  userDataDir: path.join(root, '.userdata'),
+  rootDir: root,
   windows: {
     getFloatWindow: () => null,
     getFileManagerWindow: () => null,

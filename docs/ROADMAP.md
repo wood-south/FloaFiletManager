@@ -621,12 +621,56 @@ id 就叫 `dock`，而 v2 又用 `dock` 作为 `dockSettings` 的分组名。两
 | 项 | 内容 | 状态 |
 | --- | --- | --- |
 | 8.1 | 皮肤包仓库 `src/main/services/skin-store.js`：扫描 / 校验 / 导入 / 导出（主进程侧文件系统与安全边界） | ✅ |
-| 8.2 | 导入 IPC 通道（`skin-list` / `skin-import` / `skin-export` / `skin-apply`） | ⬜ |
+| 8.2 | 导入 IPC 通道（`list-skins` / `select-skin-directory` / `import-skin` / `export-skin`） | ✅ |
 | 8.3 | 设置新增 `data-tab="pet"`（桌宠）与 `data-tab="store"`（皮肤商城） | ⬜ |
 | 8.4 | 试穿预览（复用 `.preview-dock` 思路做桌宠预览） | ⬜ |
 | 8.5 | zip 包导入（当前只支持已解压目录） | ⬜ |
 | 8.6 | 皮肤真正应用到桌宠渲染（换 SVG / atlas 帧绘制） | ⬜ |
 | 8.7 | 在线索引接口预留（不下发网络权限给渲染进程） | ⬜ |
+
+**8.2 皮肤 IPC（本轮完成）**
+
+新增 `src/main/ipc/skin.js` 与第六个主进程能力 `skins`（4 个通道），
+把 8.1 的文件系统能力暴露给渲染层：
+
+| 通道 | 作用 |
+| --- | --- |
+| `list-skins` | 列出内置 + 用户皮肤；坏包/不可读目录的错误一并透出（UI 可提示） |
+| `select-skin-directory` | 弹目录选择框，选中后把路径加入**一次性来源白名单** |
+| `import-skin` | 把已授权目录导入 `userData/pets` |
+| `export-skin` | 弹目录选择框，导出一个已安装皮肤 |
+
+**安全取舍（本轮的关键决定）**：`import-skin` 接受一个**源目录路径**，若无条件信任它，
+被攻破的渲染层就能把任意目录（例如 `C:\Users\...\.ssh`）复制进 userData，
+形成**信息外带**。因此只接受：
+① 本进程刚通过 `dialog` 返回给用户的目录（一次性白名单，容量上限 8）；
+② 用户皮肤目录内部的路径（「重新扫描」场景）。
+不能复用既有的 `select-directory`，因为它无法区分「用于导入皮肤」与「用于设置保存路径」。
+
+**被契约自检抓出的依赖缺口**：新能力 `build(deps)` 需要 `userDataDir` / `rootDir`，
+而 `index.js` 原本只传了 6 个依赖，`test/ipc-contract.test.js` 立刻报
+「注册 skins 时抛错：The "path" argument must be of type string. Received undefined」。
+已补上依赖，并让 `skin.js` 在路径缺失时**退化为「没有皮肤目录」而不是抛错**
+（一个能力注册不上不应拖垮主进程启动）。
+
+**另一处因真实环境变化而暴露的测试缺陷**：`config-migration.test.js` 原先直接读
+`.userdata/config.json` 并断言 15 个顶层字段。本次会话中发现该文件**已被真实迁移为 v2**
+（说明应用被真正启动过一次），测试因此误报「丢失字段 version」。
+已改为先把磁盘内容**归一到扁平视图**再断言（v1 直接迁移、v2 先摊平），
+使测试对迁移是否已发生都成立。
+
+> 顺带确认了阶段 6 的迁移在真实数据上生效：`config.json.bak` 已生成，
+> v2 的 `core` 含 9 个字段、`capabilities` 含 `file-manager`/`dock` 两个分组，
+> 两个废弃键（`snapEdge`/`desktopIconsHidden`）如约进入 `legacy` **未丢失**，
+> 摊平后仍是 15 个字段。
+
+**检测**：新增 `test/skin-ipc.test.js` **16 项断言**：注册 4 个通道、
+路径缺失不抛错、**默认拒绝任何未授权路径**（含 `.ssh` / `System32` / 项目内目录 /
+`..` 越出）、空值一律拒绝、`userRoot` 缺失时不误放行、用户皮肤目录内部始终允许、
+前缀相似但非子目录不允许、白名单容量上限与挤出行为、路径归一化。
+`test/ipc-contract.test.js` 由 18 → **19 项断言**（能力数 5 → 6，通道 93 → 97）。
+自检脚本 16 → **17 个**，断言 450 → **467 项**；
+`npm test` 全绿、`npm run lint` 全绿。
 
 **8.1 皮肤包仓库（本轮完成）**
 

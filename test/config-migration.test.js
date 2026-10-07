@@ -43,8 +43,19 @@ console.log('\n[1] 真实 config.json（已存在的用户数据）迁移零丢�
   if (!fs.existsSync(realPath)) {
     console.log('  SKIP  .userdata/config.json 不存在（首次运行）');
   } else {
-    const raw = JSON.parse(fs.readFileSync(realPath, 'utf8'));
+    const onDisk = JSON.parse(fs.readFileSync(realPath, 'utf8'));
+    /* 这个文件会在应用真正启动过一次之后被迁移成 v2（阶段 6 的效果）。
+       因此本组断言必须先把它归一到**扁平视图**再比对：
+       - 磁盘上是 v1 → 直接用它，顺便验证「迁移一次」的路径；
+       - 磁盘上已是 v2 → 先摊平，验证「v2 读取无损」。
+       否则测试会在迁移真正发生后误报为「字段丢失」。 */
+    const wasV2 = schema.isV2(onDisk);
+    const raw = wasV2 ? schema.decodeV2(onDisk).config : onDisk;
+    console.log('  （磁盘上为 ' + (wasV2 ? 'v2（已迁移）' : 'v1（未迁移）') +
+      '，扁平视图 ' + Object.keys(raw).length + ' 个字段）');
+
     const topKeys = Object.keys(raw);
+    // 再做一次 v1 迁移（v2 摊平后同样适用），验证往返无损
     const res = schema.migrateToV2(raw);
 
     ok('迁移成功', () => assert.strictEqual(res.ok, true));

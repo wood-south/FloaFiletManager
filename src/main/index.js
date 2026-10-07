@@ -23,7 +23,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  const { loadConfig, saveConfig } = require('./config');
+  const { loadConfig, saveConfig, userDataDir, rootDir } = require('./config');
   const windows = require('./windows');
   const { iconCache, loadIconCache, saveIconCache, scheduleSaveIconCache } = require('./services/icon-cache');
   const iconExtractor = require('./services/icon-extractor');
@@ -111,6 +111,8 @@ if (!gotTheLock) {
     windows,
     iconCache,
     scheduleSaveIconCache,
-    iconExtractor
+    iconExtractor,
+    userDataDir,
+    rootDir
   });
 }

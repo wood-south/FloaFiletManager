@@ -67,6 +67,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 能力层（可插拔业务）自己的配置命名空间
   capabilityGet: (capabilityId, key) => ipcRenderer.invoke('capability-get', { capabilityId, key }),
   capabilitySet: (capabilityId, key, value) => ipcRenderer.invoke('capability-set', { capabilityId, key, value }),
+  // 皮肤包（阶段 8）：列出 / 导入 / 导出
+  listSkins: () => ipcRenderer.invoke('list-skins'),
+  selectSkinDirectory: () => ipcRenderer.invoke('select-skin-directory'),
+  importSkin: (sourceDir) => ipcRenderer.invoke('import-skin', { sourceDir }),
+  exportSkin: (skinId) => ipcRenderer.invoke('export-skin', { skinId }),
   // 主进程能力清单与启用开关（阶段 5：关闭的能力不注册其 IPC 通道，重启生效）
   capabilityList: () => ipcRenderer.invoke('capability-list'),
   capabilityEnable: (capabilityId, enabled) => ipcRenderer.invoke('capability-enable', { capabilityId, enabled }),
