@@ -624,25 +624,40 @@ if (skinRenderer && window.PET_SKIN_RENDER) {
     }
   });
 
-  /* 诊断出口：控制台执行 pitDebug() 可查看皮肤到底有没有生效 */
+  /* 诊断出口：控制台执行 petDebug() 可查看皮肤到底有没有生效。
+     注意「画面模式」用的是 data-pet-visual（不再是 hidden 属性），
+     所以这里读 dataset 而不是 hidden —— 否则诊断本身会骗人。 */
   window.petDebug = () => {
+    const mode = petBody ? petBody.dataset.petVisual : null;
     const info = {
       皮肤ID: skinRenderer.current() ? skinRenderer.current().id : null,
       帧模式已就绪: skinRenderer.isFrameMode(),
       渲染器当前状态: skinRenderer.state(),
       状态机状态: behavior.describe().state,
       已绘制帧数: skinRenderer.drawnFrames(),
+      画面模式: mode,
       画布尺寸: petCanvas ? petCanvas.width + 'x' + petCanvas.height : null,
-      画布可见: petCanvas ? !petCanvas.hidden : null,
-      内置SVG可见: petSvg ? !petSvg.hidden : null,
-      皮肤SVG存在: !!(petSvg && petSvg.parentElement &&
-        petSvg.parentElement.querySelector('.pet-skin-img')),
-      驱动已启用: behaviorDriver ? behaviorDriver.isEnabled() : null
+      驱动已启用: behaviorDriver ? behaviorDriver.isEnabled() : null,
+      驱动配置: behaviorDriver ? behaviorDriver.config() : null
     };
     console.log('[petDebug]', info);
+    if (mode !== 'sprite' && skinRenderer.current()) {
+      console.warn('[petDebug] 已应用皮肤但画面模式不是 sprite —— 说明帧渲染没接管画面');
+    }
     return info;
   };
   console.log('[pet] 皮肤渲染已启动，控制台执行 petDebug() 可查看状态');
+
+  /* 状态变化日志：每条都带上当前该渲染的帧号。
+     "只有一种动画播放"这种问题，看这个日志一眼就能判断是
+     状态没切、还是切了但帧没变。 */
+  if (typeof behavior.subscribe === 'function') {
+    behavior.subscribe((info) => {
+      const frame = skinRenderer.isFrameMode() ? skinRenderer.lastFrame() : null;
+      console.log('[pet] 状态 ' + (info.from || '?') + ' → ' + info.state +
+        (frame === null ? '（未进入帧渲染）' : '（上一帧 ' + frame + '）'));
+    });
+  }
 
   /* 逐个动作试播：控制台执行 petTest() 会依次切到七个状态、各停 1.6 秒。
      用途：肉眼确认「每个动画都能播」，把「皮肤没生效」和「状态没切换」区分开。 */
@@ -670,9 +685,25 @@ if (skinRenderer && window.PET_SKIN_RENDER) {
   };
 }
 
-/* 设置窗口换肤后通知浮窗（用户可能在设置里改了皮肤） */
+/* 设置窗口换肤后通知浮窗（用户可能在设置里改了皮肤）。
+   广播里就带着皮肤数据，直接用；但如果负载不含数据（例如还原内置时为 null），
+   再主动查一次当前皮肤 —— 这样即使广播丢失或负载不完整，
+   浮窗也不会停留在旧皮肤上（"还原内置没反应"就是这类不同步）。 */
 if (window.electronAPI?.onSkinChanged) {
-  window.electronAPI.onSkinChanged((skin) => applySkinToShell(skin || null));
+  window.electronAPI.onSkinChanged((skin) => {
+    if (skin && skin.render) {
+      applySkinToShell(skin);
+      return;
+    }
+    // 负载为空：向主进程确认一次真实状态
+    if (window.electronAPI?.getActiveSkin) {
+      window.electronAPI.getActiveSkin()
+        .then((res) => applySkinToShell(res && res.success ? res.skin : null))
+        .catch(() => applySkinToShell(null));
+    } else {
+      applySkinToShell(null);
+    }
+  });
 }
 
 /* ========== 宠物真实视觉框上报 ==========

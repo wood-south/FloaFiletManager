@@ -17,7 +17,11 @@
 
 'use strict';
 
-const { ipcMain, dialog } = require('electron');
+/* BrowserWindow 也在这里解构：原先在 broadcastSkinChanged 内部 require，
+   既无必要（模块加载时 electron 一定可用），又让测试难以注入 ——
+   测试结束会还原 Module._load，函数内部再 require 就绕过了桩，
+   广播静默失效、测试误判为"没有广播"。 */
+const { ipcMain, dialog, BrowserWindow } = require('electron');
 const path = require('path');
 const store = require('../services/skin-store');
 
@@ -227,11 +231,11 @@ function register({ userDataDir, rootDir, loadConfig, saveConfig }) {
   }
 
   /* 换肤后广播给所有窗口，使「设置里换了皮肤 → 已开着的浮窗立刻换装」。
-     BrowserWindow 在测试环境不存在，因此整体包在 try 里：
+     传 null 表示"还原内置"。
+     BrowserWindow 在测试环境可能不存在，因此整体包在 try 里：
      广播失败不应让换肤本身失败。 */
   function broadcastSkinChanged(skin) {
     try {
-      const { BrowserWindow } = require('electron');
       if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') return;
       for (const win of BrowserWindow.getAllWindows()) {
         try {
@@ -257,6 +261,11 @@ function register({ userDataDir, rootDir, loadConfig, saveConfig }) {
         const cfg = readConfig();
         cfg.activeSkin = '';
         writeConfig(cfg);
+        /* 必须广播。
+           早先这里只写配置就直接 return 了 —— 浮窗根本不知道要还原，
+           于是"还原内置"看起来完全没反应（用户实测）。
+           skin 传 null 表示回到内置外观。 */
+        broadcastSkinChanged(null);
         return { success: true, skin: null };
       }
       if (skinId.includes('/') || skinId.includes('\\') || skinId.includes('..')) {

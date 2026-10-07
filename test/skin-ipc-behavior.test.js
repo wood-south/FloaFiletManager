@@ -25,6 +25,10 @@ const handlers = new Map();
 const dialogCalls = [];
 let nextDialogResult = { canceled: true, filePaths: [] };
 
+/* 广播用的窗口列表：必须在模块加载前就提供 BrowserWindow，
+   因为 skin.js 在模块顶层就解构了它（顶层解构后无法再注入）。 */
+const broadcastWindows = [];
+
 const electronStub = {
   ipcMain: {
     handle: (ch, fn) => handlers.set(ch, fn),
@@ -35,6 +39,12 @@ const electronStub = {
       dialogCalls.push(opts);
       return nextDialogResult;
     }
+  },
+  BrowserWindow: {
+    getAllWindows: () => broadcastWindows.map((w) => ({
+      isDestroyed: () => false,
+      webContents: { send: (ch, payload) => w.sent.push({ ch, payload }) }
+    }))
   }
 };
 
@@ -283,6 +293,62 @@ async function okAsync(name, fn) {
       await assert.doesNotReject(async () => { r = await exportSkin(null, null); });
       assert.strictEqual(r.success, false);
     });
+  }
+
+  console.log('\n[7] 还原内置：必须广播，否则浮窗不刷新（用户实测缺陷）');
+  {
+    let savedConfig = {};
+    handlers.clear();
+    skin.register({
+      userDataDir,
+      rootDir: root,
+      loadConfig: () => savedConfig,
+      saveConfig: (c) => { savedConfig = c; return true; }
+    });
+    const applySkin = handlers.get('apply-skin');
+    const getActive = handlers.get('get-active-skin');
+    const w = { sent: [] };
+    broadcastWindows.length = 0;
+    broadcastWindows.push(w);
+
+    ok('先应用一个皮肤，确认会广播', () => {
+      w.sent.length = 0;
+      const r = applySkin({}, { skinId: 'my-cool-skin' });
+      assert.strictEqual(r.success, true, '错误: ' + r.error);
+      assert.strictEqual(w.sent.length, 1, '未广播');
+      assert.strictEqual(w.sent[0].ch, 'skin-changed');
+      assert.ok(w.sent[0].payload && w.sent[0].payload.id === 'my-cool-skin');
+    });
+
+    ok('还原内置（skinId = ""）也**必须**广播（此前漏了，浮窗不刷新）', () => {
+      w.sent.length = 0;
+      const r = applySkin({}, { skinId: '' });
+      assert.strictEqual(r.success, true, '错误: ' + r.error);
+      assert.strictEqual(r.skin, null, '还原时 skin 应为 null');
+      assert.strictEqual(w.sent.length, 1, '还原时没有广播，浮窗不会刷新');
+      assert.strictEqual(w.sent[0].ch, 'skin-changed');
+      assert.strictEqual(w.sent[0].payload, null, '还原时应广播 null');
+    });
+
+    ok('还原后配置里 activeSkin 被清空', () => {
+      assert.strictEqual(savedConfig.activeSkin, '');
+    });
+
+    ok('还原后 get-active-skin 返回 null（浮窗查询也会得到内置）', () => {
+      const r = getActive({});
+      assert.strictEqual(r.success, true);
+      assert.strictEqual(r.skin, null);
+    });
+
+    ok('还原状态可再切回皮肤（来回切换都广播）', () => {
+      w.sent.length = 0;
+      assert.strictEqual(applySkin({}, { skinId: 'my-cool-skin' }).success, true);
+      assert.strictEqual(applySkin({}, { skinId: '' }).success, true);
+      assert.strictEqual(w.sent.length, 2, '两次切换应各广播一次');
+      assert.strictEqual(w.sent[1].payload, null);
+    });
+
+    delete electronStub.BrowserWindow;
   }
 
   for (const d of tmpRoots) {

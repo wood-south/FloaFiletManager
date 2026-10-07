@@ -167,6 +167,8 @@
       isFrameMode() { return ready; },
       /** 供测试/诊断：实际绘制过多少帧 */
       drawnFrames() { return drawnCount; },
+      /** 供诊断：上一帧画的图集帧号（-1 表示还没画过） */
+      lastFrame() { return lastFrame; },
 
       setState(name, nowMs) {
         if (!player) return false;
