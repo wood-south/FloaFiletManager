@@ -480,7 +480,7 @@ function positionPopup(popup, button) {
   left = Math.max(8, Math.min(left, containerRect.width - popupWidth - 8));
   popup.style.left = left + 'px';
   // 浮窗显示在 dock 面板上方
-  popup.style.bottom = '72px';
+  popup.style.bottom = POPUP_BOTTOM_OFFSET + 'px';
   // 窗口扩展由 showPopup 在定位前统一完成，此处不再重复触发
 }
 
@@ -494,15 +494,14 @@ async function showPopup(type) {
     if (oldPopup) { oldPopup.classList.remove('show'); oldPopup.hidden = true; }
   }
 
-  // 扩展窗口以容纳浮层：必须等待扩展完成再定位，
-  // 否则按钮/容器矩形在窗口尺寸变化过程中读取，浮层会先出现在错误位置再跳一下
-  if (!windowExpandedForMenu) {
-    await expandForMenu();
-    await nextFrame();
-  }
+  // 常态下窗口已预留足够空间，expandForMenu 不会做任何窗口操作；
+  // 仅当浮层高于预留高度时才会扩展一次
+  await expandForMenu(MENU_WINDOW_HEIGHT);
 
   popup.hidden = false;
-  await nextFrame();
+  // 按浮层实测高度确认窗口是否够用（WiFi 列表长度会影响浮层高度），
+  // 避免长列表时浮层顶部超出窗口被裁剪
+  await syncPopupWindowHeight(popup);
   const button = type === 'volume'
     ? document.querySelector('[data-nav-action="volume"]')
     : document.querySelector('[data-nav-action="wifi"]');
@@ -740,6 +739,8 @@ function renderWifiNetworks(networks) {
   if (!wifiList) return;
   if (!networks || networks.length === 0) {
     wifiList.innerHTML = '<div class="wifi-empty">未找到可用网络</div>';
+    // 列表内容变化会改变浮层高度，需同步窗口
+    syncPopupWindowHeight(wifiPopup);
     return;
   }
   wifiList.innerHTML = '';
@@ -793,6 +794,8 @@ function renderWifiNetworks(networks) {
     });
     wifiList.appendChild(item);
   }
+  // 列表渲染完成后再同步一次窗口高度（列表可能比初始时更长，避免浮层被裁剪）
+  syncPopupWindowHeight(wifiPopup);
 }
 
 function escapeHtml(str) {
@@ -861,10 +864,21 @@ if (dockSettings) {
 
 /* ========== 右键菜单 ========== */
 let openContextMenus = 0;
-let windowExpandedForMenu = false;
+// 标记「是否因内容超出预留高度而额外扩展过窗口」
+// 常态为 false：autoFitDockWindow 已预留 DOCK_RESERVED_HEIGHT，菜单/浮层不再改变窗口尺寸
+let dockWindowOverflowed = false;
 
 // 右键菜单所需的最小窗口高度（菜单约 3~4 项，含内边距）
 const MENU_WINDOW_HEIGHT = 280;
+// 窗口高度上限：一次性预留菜单与浮层所需空间，之后不再改变窗口尺寸。
+// 取值依据：WiFi 浮层最高约 200(列表上限) + 43(状态区) + 50(头部) ≈ 300，
+// 加上浮层底部间距 72 与顶部留白 16 → 约 390；取 420 留余量。
+// 该区域完全透明，配合点击穿透不会影响桌面操作。
+const DOCK_RESERVED_HEIGHT = 420;
+// 浮层（音量/WiFi）相对窗口底部的间距，需与 positionPopup 中的 bottom 保持一致
+const POPUP_BOTTOM_OFFSET = 72;
+// 窗口顶部留白
+const POPUP_TOP_MARGIN = 16;
 
 /** 等待下一次布局稳定（用于窗口尺寸变化后读取真实 DOM 矩形） */
 function nextFrame() {
@@ -872,31 +886,56 @@ function nextFrame() {
 }
 
 /**
- * 菜单弹出前确保窗口有足够空间。
- * 注意：**绝不改变窗口宽度**。此前这里用面板宽度直接 resizeDockWindow(panelW, 380)，
- * 而 autoFitDockWindow 用的是 panelW + 4（winBuffer），导致窗口宽在 704↔700 之间来回跳、
- * 面板水平位置抖动 2px，视觉上就是「Dock 闪动」。宽度保持不变即可根除。
+ * 按浮层的实际渲染高度把窗口撑到刚好容纳。
+ * 必要性：WiFi 浮层高度取决于网络列表长度（空列表约 200px，8 条约 340px），
+ * 早期固定用 380px/280px 会在列表较长时把浮层顶部裁掉，表现为「渲染范围被裁剪」。
  */
-async function expandForMenu() {
-  if (!window.electronAPI || !window.electronAPI.expandDockWindow) return;
-  if (windowExpandedForMenu) return;
-  windowExpandedForMenu = true;
-
-  const currentHeight = Math.ceil(dockContainer.getBoundingClientRect().height);
-  if (currentHeight >= MENU_WINDOW_HEIGHT) return; // 已够用，不做任何窗口操作
-
-  // expand-dock-window 基于 savedDockBounds 保持底边不动向上扩展，宽度沿用原值
-  await window.electronAPI.expandDockWindow(MENU_WINDOW_HEIGHT);
+async function syncPopupWindowHeight(popup) {
+  if (!popup || !dockPanel || !window.electronAPI || !window.electronAPI.expandDockWindow) return;
+  const panelH = Math.ceil(dockPanel.getBoundingClientRect().height);
+  const popupH = Math.ceil(popup.offsetHeight || 0);
+  if (!popupH) return;
+  const needed = panelH + POPUP_BOTTOM_OFFSET + popupH + POPUP_TOP_MARGIN;
+  await expandForMenu(needed);
   await nextFrame();
-  // 窗口尺寸变化会让主进程持有的 dock-panel 几何失效，必须重新上报，
-  // 否则浮窗吸附位置（以及菜单定位）会用到旧数据
+}
+
+/**
+ * 菜单/浮层弹出前确保窗口有足够空间。
+ *
+ * 正常情况下**不做任何窗口操作**：autoFitDockWindow 已按 DOCK_RESERVED_HEIGHT
+ * 一次性预留了菜单/浮层空间。只有内容超出预留高度时才会额外扩展一次
+ * （超出部分也保留，不再回缩，避免反复 resize 造成闪动）。
+ *
+ * 历史问题：此前这里用面板宽度直接 resizeDockWindow(panelW, 380)，而 autoFitDockWindow
+ * 用的是 panelW + 4（winBuffer），窗口宽在 704↔700 之间来回跳，面板水平抖动 2px；
+ * 且每次右键/关菜单都 resize 透明窗口，表现为「Dock 闪动」。
+ *
+ * @param {number} [minHeight] 本次所需的最小高度，默认按右键菜单估算
+ */
+async function expandForMenu(minHeight) {
+  if (!window.electronAPI || !window.electronAPI.expandDockWindow) return;
+  const targetHeight = Math.max(minHeight || 0, MENU_WINDOW_HEIGHT);
+  const currentHeight = Math.ceil(dockContainer.getBoundingClientRect().height);
+
+  // 预留高度已足够：什么都不做，这是常态路径
+  if (currentHeight >= targetHeight) {
+    dockWindowOverflowed = false;
+    return;
+  }
+
+  // 预留不够（例如浮层内容异常长）：扩展一次，且不回缩
+  dockWindowOverflowed = true;
+  await window.electronAPI.expandDockWindow(targetHeight);
+  await nextFrame();
   reportPanelOffset();
 }
 
 function restoreAfterMenu() {
-  if (!windowExpandedForMenu) return;
-  windowExpandedForMenu = false;
-  // 用专门的还原通道，精确回到扩展前的边界，避免 autoFit 重算造成二次抖动
+  // 常态：从未额外扩展过窗口 → 无需还原，也就不会触发 resize 闪动
+  if (!dockWindowOverflowed) return;
+  dockWindowOverflowed = false;
+  // 仅在确实超出预留高度时才回缩一次（用专门通道精确回到扩展前边界）
   if (window.electronAPI && window.electronAPI.restoreDockWindow) {
     window.electronAPI.restoreDockWindow().then(() => {
       reportPanelOffset();
@@ -918,15 +957,11 @@ function closeContextMenu(menu) {
 async function positionMenuAtMouse(menu, screenX, screenY) {
   if (!menu) return;
   openContextMenus++; // 先计数，确保 mouseleave 检测到菜单已打开
-  // 确保窗口有足够空间，并等布局稳定后再算坐标
+  // 确保窗口有足够空间（常态下为 no-op），再等布局稳定后算坐标
   // （此前是 expandForMenu() + 固定 setTimeout(100) 猜测等待，
   //   既可能等不够导致菜单错位，也可能白等造成弹出延迟）
-  if (!windowExpandedForMenu) {
-    await expandForMenu();
-    await nextFrame();
-  } else {
-    await nextFrame();
-  }
+  await expandForMenu(MENU_WINDOW_HEIGHT);
+  await nextFrame();
 
   // 通过 IPC 获取 dock 窗口边界，将 screen 坐标转为 client 坐标
   let clientX = screenX, clientY = screenY;
@@ -1350,9 +1385,14 @@ function autoFitDockWindow(itemCount, iconSize) {
       const winBuffer = 4;
       const hoverBuffer = 14; // 预留 hover 上浮空间
       const totalWidth = Math.max(180, Math.round(panelRect.width + winBuffer));
-      const totalHeight = Math.max(60, Math.round(panelRect.height + winBuffer + hoverBuffer));
+      // 高度需要**一次性预留**菜单/浮层空间：
+      // 透明窗口每次 resize 都会触发合成层重绘，表现为「Dock 闪动」；
+      // 而且运行期改变窗口尺寸会让主进程持有的面板几何失效、影响浮窗吸附。
+      // 因此这里直接把上限算进窗口高度，之后右键菜单与浮层都不再改变窗口尺寸。
+      const baseHeight = panelRect.height + winBuffer + hoverBuffer;
+      const totalHeight = Math.max(60, Math.round(Math.max(baseHeight, DOCK_RESERVED_HEIGHT)));
 
-      window.electronAPI.resizeDockWindow(totalWidth, totalHeight, windowExpandedForMenu).then(() => {
+      window.electronAPI.resizeDockWindow(totalWidth, totalHeight, dockWindowOverflowed).then(() => {
         // resize 生效后上报真实渲染边界
         reportPanelOffset();
       });

@@ -432,7 +432,7 @@ public class DeskIcons {
 
   ipcMain.handle('get-network-status', async () => {
     return new Promise((resolve) => {
-      exec('chcp 65001 >nul & ipconfig', { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+      exec('chcp 65001 >nul & ipconfig', { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true, encoding: 'utf8' }, (err, stdout, stderr) => {
         const out = stdout || stderr || '';
         const result = { wired: null, wireless: null };
         if (err && !out) { resolve(result); return; }
@@ -500,7 +500,7 @@ public class DeskIcons {
 
   ipcMain.handle('get-wifi-status', async () => {
     return new Promise((resolve) => {
-      exec('chcp 65001 >nul & netsh wlan show interfaces', { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+      exec('chcp 65001 >nul & netsh wlan show interfaces', { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true, encoding: 'utf8' }, (err, stdout, stderr) => {
         const out = stdout || stderr || '';
         if (err && !out) { resolve({ connected: false, ssid: '', state: '', signal: '', error: err.message }); return; }
         try {
@@ -515,7 +515,7 @@ public class DeskIcons {
 
   ipcMain.handle('get-wifi-networks', async () => {
     return new Promise((resolve) => {
-      exec('chcp 65001 >nul & netsh wlan show networks mode=bssid', { timeout: 8000, maxBuffer: 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+      exec('chcp 65001 >nul & netsh wlan show networks mode=bssid', { timeout: 8000, maxBuffer: 1024 * 1024, windowsHide: true, encoding: 'utf8' }, (err, stdout, stderr) => {
         const out = stdout || stderr || '';
         if (err && !out) { resolve({ success: false, networks: [], error: err.message }); return; }
         try {
@@ -530,7 +530,7 @@ public class DeskIcons {
 
   ipcMain.handle('connect-wifi', async (event, ssid) => {
     return new Promise((resolve) => {
-      exec(`chcp 65001 >nul & netsh wlan connect name="${ssid.replace(/"/g, '\\"')}"`, { timeout: 8000, windowsHide: true }, (err) => {
+      exec(`chcp 65001 >nul & netsh wlan connect name="${ssid.replace(/"/g, '\\"')}"`, { timeout: 8000, windowsHide: true, encoding: 'utf8' }, (err) => {
         if (err) { resolve({ success: false, error: err.message }); return; }
         resolve({ success: true });
       });
@@ -539,7 +539,7 @@ public class DeskIcons {
 
   ipcMain.handle('disconnect-wifi', async () => {
     return new Promise((resolve) => {
-      exec('chcp 65001 >nul & netsh wlan disconnect', { timeout: 5000, windowsHide: true }, (err) => {
+      exec('chcp 65001 >nul & netsh wlan disconnect', { timeout: 5000, windowsHide: true, encoding: 'utf8' }, (err) => {
         if (err) { resolve({ success: false, error: err.message }); return; }
         resolve({ success: true });
       });
