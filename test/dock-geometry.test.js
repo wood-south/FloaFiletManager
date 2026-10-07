@@ -125,4 +125,32 @@ ok('preserveSavedBounds 为真时不覆盖 savedDockBounds', () => {
     'savedDockBounds 仍会被无条件覆盖，扩展期间的 resize 会破坏还原基准');
 });
 
+console.log('\n[7] 预留高度不得形成「隐形点击死区」');
+const dockCss = fs.readFileSync(path.join(root, 'renderer', 'styles', 'dock.css'), 'utf8');
+
+/** 取出某个选择器块的内容（到配对的第一个 `}`） */
+function cssBlock(selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = dockCss.match(new RegExp('(^|\\n)' + escaped + '\\s*\\{([\\s\\S]*?)\\}'));
+  assert.ok(m, '未找到 CSS 规则 ' + selector);
+  return m[2];
+}
+
+ok('.dock-container 设为 pointer-events: none（透明预留区不拦截鼠标）', () => {
+  assert.ok(/pointer-events:\s*none/.test(cssBlock('.dock-container')),
+    '容器未禁用指针事件，预留的 420px 透明区会挡住桌面点击');
+});
+ok('.dock-panel 恢复 pointer-events: auto', () => {
+  assert.ok(/pointer-events:\s*auto/.test(cssBlock('.dock-panel')),
+    '面板未恢复交互，Dock 将完全无法点击');
+});
+ok('.dock-popup.show 恢复 pointer-events: auto', () => {
+  assert.ok(/pointer-events:\s*auto/.test(cssBlock('.dock-popup.show')),
+    '浮层未恢复交互，音量/网络浮层点不动');
+});
+ok('.dock-context-menu 恢复 pointer-events: auto（菜单挂在 body 下）', () => {
+  assert.ok(/pointer-events:\s*auto/.test(cssBlock('.dock-context-menu')),
+    '右键菜单未恢复交互，菜单项点不动');
+});
+
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));

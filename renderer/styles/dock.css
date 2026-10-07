@@ -32,6 +32,10 @@ body::-webkit-scrollbar {
   padding-bottom: 2px;
   position: relative;
   overflow: visible;
+  /* 窗口高度一次性预留了菜单/浮层空间（DOCK_RESERVED_HEIGHT），
+     这块区域必须完全不接收鼠标事件，否则会在 Dock 上方形成「隐形点击死区」，
+     挡住桌面/其他窗口的点击。真正的可交互元素各自恢复 auto。 */
+  pointer-events: none;
 }
 
 .dock-panel {
@@ -46,6 +50,8 @@ body::-webkit-scrollbar {
   isolation: isolate;
   background: transparent;
   box-shadow: none;
+  /* 容器已设为 pointer-events: none，面板本体需要恢复交互 */
+  pointer-events: auto;
 }
 
 /* 基础层结构：仅定位属性，无任何视觉效果
@@ -467,6 +473,8 @@ body::-webkit-scrollbar {
     inset 0 -1px 0 rgba(0, 0, 0, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.18);
   animation: menuAppear 0.15s ease;
+  /* 菜单挂在 body 下，而容器已设为 pointer-events: none，需显式恢复交互 */
+  pointer-events: auto;
 }
 
 @keyframes menuAppear {
@@ -573,6 +581,7 @@ body::-webkit-scrollbar {
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
+  /* 容器已设为 pointer-events: none，显示中的浮层需恢复交互 */
 }
 
 .dock-popup[hidden] {
