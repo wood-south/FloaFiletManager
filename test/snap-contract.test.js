@@ -67,21 +67,42 @@ ok('锚点上报后：有则 maintain，无则 search（不再被空关系挡住
 });
 ok('maintainDockSnap 沿当前边重算，不重新挑方向', () => {
   const body = extractFunction(windowSrc, 'maintainDockSnap');
-  assert.ok(/floatSnapToDock\.side/.test(body), '未使用已有吸附方向');
+  // 决策统一交给 snap.js 的 decide()（mode: 'maintain' 只沿已有 side 重算）；
+  // 关键是不能在 maintain 路径里调用 computeDockSnap（那会重新挑方向）
+  assert.ok(/mode:\s*'maintain'/.test(body), '未以 maintain 模式调用 decide');
   assert.ok(!/computeDockSnap\(/.test(body), 'maintain 中重新挑方向，Dock 移动时可能把浮窗吸到另一侧');
-  ['top', 'bottom', 'left', 'right'].forEach((side) => {
-    assert.ok(body.includes("case '" + side + "'"), '缺少 ' + side + ' 分支');
-  });
 });
 ok('maintain 有静止容差，避免 1px 级反复微调', () => {
   assert.ok(/SNAP_SETTLE_TOLERANCE/.test(windowSrc), '缺少静止容差');
   assert.ok(/SNAP_SETTLE_TOLERANCE/.test(extractFunction(windowSrc, 'maintainDockSnap')),
     'maintain 未使用静止容差');
 });
-ok('Dock 移动与窗口缩放后调用 maintainDockSnap', () => {
-  assert.ok(/win\.setPosition\(newX, newY\);\s*[\s\S]{0,400}maintainDockSnap\(\)/.test(moveHandler),
+ok('非吸附轴按关系偏移跟随面板（修复「不跟随移动」）', () => {
+  const snapSrc = fs.readFileSync(path.join(root, 'src', 'main', 'snap.js'), 'utf8');
+  const start = snapSrc.indexOf('function positionForSide(');
+  const end = snapSrc.indexOf('\n}\n', start);
+  const body = snapSrc.slice(start, end);
+  assert.ok(/relation\.offsetX/.test(body) && /relation\.offsetY/.test(body),
+    'positionForSide 未用关系偏移更新非吸附轴，Dock 横向移动时贴在上/下方的桌宠不会跟随');
+});
+ok('move-dock 触发浮窗跟随，且不再残留 resetDockSnap', () => {
+  assert.ok(/win\.setPosition\(newX, newY\)[\s\S]{0,400}maintainDockSnap\(\)/.test(moveHandler),
     'move-dock 未触发浮窗跟随');
   assert.ok(!/resetDockSnap/.test(windowSrc), '仍残留 resetDockSnap 调用');
+});
+ok('search 与 maintain 统一走 decide()，避免公式分叉', () => {
+  assert.ok(/decide\(/.test(extractFunction(windowSrc, 'searchDockSnap')),
+    'searchDockSnap 未走 decide()');
+  assert.ok(/decide\(/.test(extractFunction(windowSrc, 'maintainDockSnap')),
+    'maintainDockSnap 未走 decide()');
+});
+ok('search 未命中时不移动窗口（先判定后移动）', () => {
+  const body = extractFunction(windowSrc, 'searchDockSnap');
+  // setPosition 必须出现在 action === 'snap' 判断之后
+  const guardIdx = body.indexOf("decision.action === 'snap'");
+  const setPosIdx = body.indexOf('setPosition');
+  assert.ok(guardIdx >= 0, '缺少 action 判断');
+  assert.ok(setPosIdx > guardIdx, 'setPosition 出现在判定之前，搜索失败时窗口会被移动');
 });
 
 console.log('\n[3] 锚点缺失时不做错误吸附');
@@ -93,10 +114,33 @@ ok('petVisualAnchor 为空时 searchDockSnap 直接返回', () => {
     '仍存在「锚点缺失时回退为窗口边界」的旧写法');
 });
 
-console.log('\n[4] 可诊断性');
+console.log('\n[4] 可诊断性与视觉框测量');
 ok('提供 DSH_DEBUG_SNAP 调试日志开关', () => {
   assert.ok(/DSH_DEBUG_SNAP/.test(windowSrc), '缺少吸附调试日志开关');
   assert.ok(/function debugSnap\(/.test(windowSrc), '缺少 debugSnap');
+});
+ok('视觉框用 SVG getBBox + getScreenCTM 测量真实画面（而非容器 90×90）', () => {
+  const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  const start = floatSrc.indexOf('function readPetAnchor(');
+  const end = floatSrc.indexOf('\n}\n', start);
+  const body = floatSrc.slice(start, end);
+  assert.ok(/getBBox\(\)/.test(body), '未使用 getBBox 测量真实绘制内容');
+  assert.ok(/getScreenCTM\(\)/.test(body), '未做用户单位 → 客户端坐标转换');
+  assert.ok(/\.pet-svg/.test(floatSrc), '未定位到 .pet-svg');
+  // 必须仍保留回退，避免 getBBox 抛错时完全没有锚点
+  assert.ok(/getBoundingClientRect\(\)/.test(body), '缺少回退路径');
+});
+
+console.log('\n[5] 拖动窗口移动合并到每帧一次（修复拖动闪动）');
+[['float.js', 'moveWindow'], ['dock.js', 'moveDock']].forEach(([file, api]) => {
+  ok(file + ' 的拖动逻辑使用 requestAnimationFrame 合并', () => {
+    const src = fs.readFileSync(path.join(root, 'renderer', 'scripts', file), 'utf8');
+    assert.ok(/requestAnimationFrame/.test(src), file + ' 未使用 rAF');
+    // 直接调用点应受 rAF 保护：出现 rafPending/raf 标记
+    assert.ok(/rafPending|dragRafPending/.test(src),
+      file + ' 缺少「本帧已排程」标记，可能一帧内多次移动窗口');
+    assert.ok(new RegExp(api).test(src), '未找到 ' + api);
+  });
 });
 
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));

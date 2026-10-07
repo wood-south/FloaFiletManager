@@ -1,26 +1,18 @@
 /**
- * 浮窗 ↔ Dock 吸附几何（纯函数，无 Electron 依赖，便于单测）
+ * 浮窗 ↔ Dock 吸附（纯状态机，无 Electron 依赖）
  *
- * 背景：早期实现在主进程里用四个手调常数 snapInset{Top,Bottom,Left,Right} = 52 计算吸附位置，
- * 注释自称是「浮窗(160)与宠物视觉(90)差值一半」（实际应为 35），且宠物视觉框其实是
- * **姿态相关**的：SVG 内容在 100×100 viewBox 中约占 90×80，贴边旋转 90° 后视觉宽又变成 80。
- * 因此任何固定像素补偿值都只能在某一种姿态下正确 —— 这是「吸附位置有时候不对」的根因。
+ * 为什么独立成模块：吸附涉及「搜索方向 / 保持关系 / Dock 移动跟随 / 视觉框变化重算」
+ * 多段逻辑，且高度依赖坐标运算。抽成纯函数后可以用 Node 完整模拟
+ * 「拖动 → 吸附 → 移动 Dock」全过程（见 test/snap-flow.test.js），
+ * 在没有 GUI 的环境里也能验证每一步的坐标是否正确。
  *
- * 本模块改为由渲染进程上报宠物**真实视觉框**（getBoundingClientRect()，含旋转与缩放），
- * 吸附位置一律由视觉框推导，不再使用手调常数。
+ * 坐标系约定：
+ *   - floatBounds / panelBounds 为**屏幕坐标**
+ *   - anchor 为宠物视觉框，**相对浮窗窗口左上角**（来自渲染进程上报）
  */
 
 /**
- * 计算吸附后的窗口位置。
- *
- * @param {object} p
- * @param {{x:number,y:number,width:number,height:number}} p.floatBounds 浮窗窗口在屏幕上的边界
- * @param {{left:number,top:number,width:number,height:number}} p.anchor 宠物视觉框（相对浮窗左上角）
- * @param {{x:number,y:number,width:number,height:number}} p.panelBounds Dock 面板在屏幕上的边界
- * @param {number} [p.snapDistance] 触发吸附的最大像素距离
- * @param {number} [p.visualGap] 吸附后宠物视觉边框与面板之间的间隙（0 = 紧贴）
- * @param {number} [p.minOverlap] x/y 方向至少重叠多少像素才考虑该方向的吸附
- * @returns {{side:string, x:number, y:number, gap:number}|null}
+ * 计算吸附后的窗口位置（搜索模式）。
  */
 function computeDockSnap({
   floatBounds,
@@ -35,38 +27,29 @@ function computeDockSnap({
 
   const fx = floatBounds.x;
   const fy = floatBounds.y;
-
-  // 宠物视觉框在屏幕上的位置
   const vx = fx + anchor.left;
   const vy = fy + anchor.top;
   const vw = anchor.width;
   const vh = anchor.height;
 
-  // 与面板的重叠量（用于判断该方向是否「对着」面板）
   const xOverlap = Math.min(vx + vw, panelBounds.x + panelBounds.width) - Math.max(vx, panelBounds.x);
   const yOverlap = Math.min(vy + vh, panelBounds.y + panelBounds.height) - Math.max(vy, panelBounds.y);
 
   const candidates = [];
 
-  // 面板上方：宠物下沿 vs 面板上沿
   if (xOverlap >= minOverlap) {
-    const gap = panelBounds.y - (vy + vh);
-    candidates.push({ side: 'top', gap, fix: () => ({ x: fx, y: fy + (gap - visualGap) }) });
-    // 面板下方：宠物上沿 vs 面板下沿
-    const gapBelow = vy - (panelBounds.y + panelBounds.height);
-    candidates.push({ side: 'bottom', gap: gapBelow, fix: () => ({ x: fx, y: fy - (gapBelow - visualGap) }) });
+    const gapTop = panelBounds.y - (vy + vh);
+    candidates.push({ side: 'top', gap: gapTop });
+    const gapBottom = vy - (panelBounds.y + panelBounds.height);
+    candidates.push({ side: 'bottom', gap: gapBottom });
   }
-
-  // 面板左侧：宠物右沿 vs 面板左沿
   if (yOverlap >= minOverlap) {
-    const gap = panelBounds.x - (vx + vw);
-    candidates.push({ side: 'left', gap, fix: () => ({ x: fx + (gap - visualGap), y: fy }) });
-    // 面板右侧：宠物左沿 vs 面板右沿
+    const gapLeft = panelBounds.x - (vx + vw);
+    candidates.push({ side: 'left', gap: gapLeft });
     const gapRight = vx - (panelBounds.x + panelBounds.width);
-    candidates.push({ side: 'right', gap: gapRight, fix: () => ({ x: fx - (gapRight - visualGap), y: fy }) });
+    candidates.push({ side: 'right', gap: gapRight });
   }
 
-  // 取绝对距离最近且在阈值内的方向
   let best = null;
   for (const c of candidates) {
     if (!Number.isFinite(c.gap)) continue;
@@ -75,23 +58,68 @@ function computeDockSnap({
   }
   if (!best) return null;
 
-  const pos = best.fix();
+  const target = positionForSide({
+    side: best.side,
+    floatBounds,
+    anchor,
+    panelBounds,
+    visualGap
+  });
+  // 统一取整：非吸附轴会原样沿用 floatBounds 的坐标，若不取整会出现半像素抖动，
+  // 且与 maintain 路径（positionForSide 内已取整）结果不一致
   return {
     side: best.side,
-    x: Math.round(pos.x),
-    y: Math.round(pos.y),
+    x: Math.round(target.x),
+    y: Math.round(target.y),
     gap: best.gap
   };
 }
 
 /**
- * 计算浮窗相对 Dock 面板的吸附关系（供 Dock 移动时保持相对位置）。
+ * 按指定方向计算「视觉边框紧贴面板」的目标窗口位置。
+ * 吸附位置唯一的计算入口：搜索与保持都走它，避免两处公式分叉
+ * （历史上正是分叉导致「搜索」与「保持」结果不一致）。
  *
- * @param {{x:number,y:number,width:number,height:number}} p.floatBounds
- * @param {{x:number,y:number,width:number,height:number}} p.panelBounds
- * @param {string} p.side 吸附方向
- * @returns {{side:string, offsetX:number, offsetY:number}}
+ * @param {object} p
+ * @param {string} p.side
+ * @param {object} p.floatBounds 当前浮窗边界
+ * @param {object} p.anchor 宠物视觉框（相对窗口）
+ * @param {object} p.panelBounds 面板屏幕边界
+ * @param {number} [p.visualGap]
+ * @param {object|null} [p.relation] 已有吸附关系；传入时**非吸附轴按关系偏移跟随面板**。
+ *   这一点很关键：贴在上/下方时若锁死 x，Dock 横向移动后桌宠就不会跟随，
+ *   表现为「不跟随移动」。
  */
+function positionForSide({ side, floatBounds, anchor, panelBounds, visualGap = 0, relation = null }) {
+  let { x, y } = floatBounds;
+
+  switch (side) {
+    case 'top':
+      // 宠物视觉下沿 = 面板上沿 - visualGap
+      y = Math.round(panelBounds.y - visualGap - anchor.top - anchor.height);
+      if (relation) x = Math.round(panelBounds.x + relation.offsetX);
+      break;
+    case 'bottom':
+      // 宠物视觉上沿 = 面板下沿 + visualGap
+      y = Math.round(panelBounds.y + panelBounds.height + visualGap - anchor.top);
+      if (relation) x = Math.round(panelBounds.x + relation.offsetX);
+      break;
+    case 'left':
+      // 宠物视觉右沿 = 面板左沿 - visualGap
+      x = Math.round(panelBounds.x - visualGap - anchor.left - anchor.width);
+      if (relation) y = Math.round(panelBounds.y + relation.offsetY);
+      break;
+    case 'right':
+      // 宠物视觉左沿 = 面板右沿 + visualGap
+      x = Math.round(panelBounds.x + panelBounds.width + visualGap - anchor.left);
+      if (relation) y = Math.round(panelBounds.y + relation.offsetY);
+      break;
+    default:
+      return null;
+  }
+  return { x, y };
+}
+
 function computeSnapRelation({ floatBounds, panelBounds, side }) {
   return {
     side,
@@ -100,4 +128,90 @@ function computeSnapRelation({ floatBounds, panelBounds, side }) {
   };
 }
 
-module.exports = { computeDockSnap, computeSnapRelation };
+/**
+ * 吸附状态机。
+ *
+ * decide() 返回本次应当执行的动作，不直接操作窗口：
+ *   { action: 'snap',  side, x, y, relation }  需要移动窗口并建立/更新关系
+ *   { action: 'none' }                          无需动作
+ *   { action: 'release' }                       解除吸附关系
+ *
+ * @param {object} input
+ * @param {object} input.floatBounds 当前浮窗窗口边界（屏幕坐标）
+ * @param {object|null} input.anchor 宠物视觉框（相对窗口），未上报时传 null
+ * @param {object|null} input.panelBounds Dock 面板边界（屏幕坐标）；null 表示 Dock 不可用
+ * @param {object|null} input.relation 当前吸附关系；null 表示尚未吸附
+ * @param {'search'|'maintain'} input.mode
+ * @param {number} [input.snapDistance]
+ * @param {number} [input.visualGap]
+ * @param {number} [input.settleTolerance] maintain 模式下小于该位移不做移动
+ */
+function decide({
+  floatBounds,
+  anchor,
+  panelBounds,
+  relation,
+  mode = 'maintain',
+  snapDistance = 60,
+  visualGap = 0,
+  settleTolerance = 2
+}) {
+  // 面板不可用：仅在保持模式下解除关系（搜索模式下无事可做）
+  if (!panelBounds) {
+    return mode === 'maintain' && relation ? { action: 'release' } : { action: 'none' };
+  }
+  // 视觉框未上报：不做任何吸附。早期实现回退为「按整个窗口吸附」，
+  // 会引入 (windowH - petH)/2 的固定偏差，且该偏差不会被后续上报纠正。
+  if (!anchor || !anchor.width || !anchor.height) return { action: 'none' };
+  if (!floatBounds) return { action: 'none' };
+
+  if (mode === 'search') {
+    const result = computeDockSnap({
+      floatBounds, anchor, panelBounds, snapDistance, visualGap
+    });
+    if (!result) {
+      // 搜索模式找不到吸附：清除已有关系（用户已拖离 Dock）
+      return relation ? { action: 'release' } : { action: 'none' };
+    }
+    return {
+      action: 'snap',
+      side: result.side,
+      x: result.x,
+      y: result.y,
+      relation: computeSnapRelation({
+        floatBounds: { x: result.x, y: result.y, width: floatBounds.width, height: floatBounds.height },
+        panelBounds,
+        side: result.side
+      })
+    };
+  }
+
+  // maintain：必须已有关系，沿当前边重算（不重新挑方向，避免被吸到另一侧）
+  if (!relation) return { action: 'none' };
+  const target = positionForSide({
+    side: relation.side, floatBounds, anchor, panelBounds, visualGap, relation
+  });
+  if (!target) return { action: 'none' };
+
+  const moved = Math.abs(target.x - floatBounds.x) > settleTolerance ||
+    Math.abs(target.y - floatBounds.y) > settleTolerance;
+
+  return {
+    action: moved ? 'snap' : 'none',
+    side: relation.side,
+    x: target.x,
+    y: target.y,
+    relation: computeSnapRelation({
+      floatBounds: { x: target.x, y: target.y, width: floatBounds.width, height: floatBounds.height },
+      panelBounds,
+      side: relation.side
+    })
+  };
+}
+
+module.exports = {
+  computeDockSnap,
+  computeSnapRelation,
+  positionForSide,
+  decide
+};

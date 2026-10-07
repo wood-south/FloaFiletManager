@@ -1223,6 +1223,27 @@ if (dockPanel) {
     let startX = e.screenX;
     let startY = e.screenY;
     let dragging = false;
+    // 合并到每帧一次窗口移动：早期每次 mousemove 都调 moveDock，
+    // 同一帧内可能多次 setPosition（透明窗口每次都是合成层重排），表现为拖动闪动、跟手性差
+    let pendingDx = 0;
+    let pendingDy = 0;
+    let rafPending = false;
+
+    const flushMove = (ev) => {
+      rafPending = false;
+      if (!dragging) {
+        pendingDx = 0;
+        pendingDy = 0;
+        return;
+      }
+      const dx = pendingDx;
+      const dy = pendingDy;
+      pendingDx = 0;
+      pendingDy = 0;
+      if (dx === 0 && dy === 0) return;
+      window.electronAPI.moveDock(dx, dy);
+      void ev;
+    };
 
     const onMove = (ev) => {
       if (!dragging) {
@@ -1231,14 +1252,25 @@ if (dockPanel) {
         dockDragging = true;
         dockPanel.classList.add('dragging');
       }
-      const dx = ev.screenX - startX;
-      const dy = ev.screenY - startY;
+      pendingDx += ev.screenX - startX;
+      pendingDy += ev.screenY - startY;
       startX = ev.screenX;
       startY = ev.screenY;
-      window.electronAPI.moveDock(dx, dy);
+      if (!rafPending) {
+        rafPending = true;
+        requestAnimationFrame(flushMove);
+      }
     };
 
     const onUp = () => {
+      if (dragging && (pendingDx !== 0 || pendingDy !== 0)) {
+        // 把最后一帧未提交的位移发出去，避免松手瞬间「少走一截」
+        const dx = pendingDx;
+        const dy = pendingDy;
+        pendingDx = 0;
+        pendingDy = 0;
+        window.electronAPI.moveDock(dx, dy);
+      }
       dockPanel.classList.remove('dragging');
       dockDragging = false;
       document.removeEventListener('mousemove', onMove);

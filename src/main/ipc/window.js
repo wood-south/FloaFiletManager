@@ -1,5 +1,5 @@
 const { ipcMain, shell, BrowserWindow } = require('electron');
-const { computeDockSnap, computeSnapRelation } = require('../snap');
+const { decide } = require('../snap');
 
 let savedSnapEdges = null;
 let savedFloatBounds = null;
@@ -263,6 +263,10 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
   /**
    * 吸附搜索：按当前几何找最近的一侧并建立吸附关系。
    *
+   * 注意顺序：**先判定、后移动**。早期实现先计算位置再无条件 setPosition，
+   * 于是"搜索失败"时窗口也会被移动（computeDockSnap 在非候选轴上原样返回当前坐标，
+   * 但在候选轴上会给出目标值），表现为位置被改坏、跟随关系丢失。
+   *
    * @param {object} [opts]
    * @param {boolean} [opts.requireExistingRelation=true] 为 true 时必须已存在吸附关系
    *   （用于 Dock 移动/改尺寸后的「保持跟随」路径）；为 false 时允许新建关系
@@ -271,7 +275,6 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
    */
   function searchDockSnap(opts) {
     const requireRelation = !opts || opts.requireExistingRelation !== false;
-    const snapDistance = (opts && opts.snapDistance) || SNAP_DISTANCE;
 
     if (requireRelation && !floatSnapToDock) return false;
 
@@ -284,38 +287,40 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
       return false;
     }
     // 视觉框尚未上报时不做吸附：早期回退为「按整个窗口吸附」会让宠物
-    // 比正确位置偏差 (windowH - petH)/2 ≈ 40px，且该偏差不会被后续上报纠正
+    // 比正确位置偏差 (windowH - petH)/2，且该偏差不会被后续上报纠正
     if (!petVisualAnchor) return false;
 
     const bounds = floatWindow.getBounds();
-    const anchor = petVisualAnchor;
-
-    const snapResult = computeDockSnap({
+    const decision = decide({
       floatBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
-      anchor,
+      anchor: petVisualAnchor,
       panelBounds: panel,
-      snapDistance,
+      relation: floatSnapToDock,
+      mode: 'search',
+      snapDistance: (opts && opts.snapDistance) || SNAP_DISTANCE,
       visualGap: SNAP_VISUAL_GAP
     });
 
-    if (!snapResult) {
-      if (!requireRelation) floatSnapToDock = null;
-      return false;
+    if (decision.action === 'snap') {
+      if (decision.x !== bounds.x || decision.y !== bounds.y) {
+        floatWindow.setPosition(decision.x, decision.y);
+      }
+      floatSnapToDock = decision.relation;
+      try {
+        floatWindow.webContents.send('dock-snap-changed', decision.side);
+      } catch (_) {}
+      debugSnap('search', decision.side, panel, petVisualAnchor, bounds, decision);
+      return true;
     }
 
-    if (snapResult.x !== bounds.x || snapResult.y !== bounds.y) {
-      floatWindow.setPosition(snapResult.x, snapResult.y);
+    // 未命中吸附：不移动窗口；仅在有旧关系时清除（用户已拖离 Dock）
+    if (decision.action === 'release') {
+      floatSnapToDock = null;
+      try {
+        floatWindow.webContents.send('dock-snap-changed', null);
+      } catch (_) {}
     }
-    floatSnapToDock = computeSnapRelation({
-      floatBounds: { x: snapResult.x, y: snapResult.y, width: bounds.width, height: bounds.height },
-      panelBounds: panel,
-      side: snapResult.side
-    });
-    try {
-      floatWindow.webContents.send('dock-snap-changed', snapResult.side);
-    } catch (_) {}
-    debugSnap('search', snapResult.side, panel, anchor, bounds, snapResult);
-    return true;
+    return false;
   }
 
   // 位置已足够接近目标时不再移动，避免浮点/取整造成 1px 级反复微调（抖动）
@@ -330,51 +335,42 @@ function register({ loadConfig, saveConfig, screen, app, getFloatWindow, getFile
     if (!floatSnapToDock) return false;
     const floatWindow = getFloatWindow();
     if (!floatWindow || floatWindow.isDestroyed()) return false;
+    if (!petVisualAnchor) return false;
     const panel = getDockPanelScreenBounds();
     if (!panel) {
       floatSnapToDock = null;
       return false;
     }
     const bounds = floatWindow.getBounds();
-    if (!petVisualAnchor) return false;
-    const anchor = petVisualAnchor;
 
-    let x = bounds.x;
-    let y = bounds.y;
-
-    switch (floatSnapToDock.side) {
-      case 'top':
-        y = Math.round(panel.y - anchor.top - anchor.height - SNAP_VISUAL_GAP);
-        break;
-      case 'bottom':
-        y = Math.round(panel.y + panel.height - anchor.top + SNAP_VISUAL_GAP);
-        break;
-      case 'left':
-        x = Math.round(panel.x - anchor.left - anchor.width - SNAP_VISUAL_GAP);
-        break;
-      case 'right':
-        x = Math.round(panel.x + panel.width - anchor.left + SNAP_VISUAL_GAP);
-        break;
-      default:
-        return false;
-    }
-
-    const moved = Math.abs(x - bounds.x) > SNAP_SETTLE_TOLERANCE ||
-      Math.abs(y - bounds.y) > SNAP_SETTLE_TOLERANCE;
-    if (moved) {
-      floatWindow.setPosition(x, y);
-    }
-    floatSnapToDock = computeSnapRelation({
-      floatBounds: { x, y, width: bounds.width, height: bounds.height },
+    // 决策统一交给 snap.js 的 decide()：搜索与保持共用同一套公式，
+    // 避免两处公式分叉（历史上正是分叉导致「搜索」与「保持」结果不一致）
+    const decision = decide({
+      floatBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+      anchor: petVisualAnchor,
       panelBounds: panel,
-      side: floatSnapToDock.side
+      relation: floatSnapToDock,
+      mode: 'maintain',
+      visualGap: SNAP_VISUAL_GAP,
+      settleTolerance: SNAP_SETTLE_TOLERANCE
     });
-    if (moved) {
-      try {
-        floatWindow.webContents.send('dock-snap-changed', floatSnapToDock.side);
-      } catch (_) {}
+
+    if (decision.action === 'release') {
+      floatSnapToDock = null;
+      return false;
     }
-    debugSnap('maintain', floatSnapToDock.side, panel, anchor, bounds, { x, y });
+    if (decision.action !== 'snap') {
+      // 已在容差内：仅刷新关系，不移动窗口（避免 1px 级反复微调）
+      floatSnapToDock = decision.relation || floatSnapToDock;
+      return true;
+    }
+
+    floatWindow.setPosition(decision.x, decision.y);
+    floatSnapToDock = decision.relation;
+    try {
+      floatWindow.webContents.send('dock-snap-changed', decision.side);
+    } catch (_) {}
+    debugSnap('maintain', decision.side, panel, petVisualAnchor, bounds, decision);
     return true;
   }
 

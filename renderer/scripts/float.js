@@ -20,6 +20,10 @@ let wasSnapped = false;
 let snapLock = false;
 let recycleMode = false;
 let modalActive = false; // 模态框打开时禁止点击穿透
+// 拖动的窗口移动合并到每帧一次（避免同一帧多次 setPosition 造成闪动）
+let dragPendingDx = 0;
+let dragPendingDy = 0;
+let dragRafPending = false;
 
 /* ========== 点击穿透：透明区域允许鼠标穿透到桌面 ========== */
 function enableMouseCapture() {
@@ -149,20 +153,43 @@ petBody.addEventListener('mousedown', (e) => {
   hasMoved = false;
   mouseStartX = e.screenX;
   mouseStartY = e.screenY;
+  dragPendingDx = 0;
+  dragPendingDy = 0;
   petBody.classList.add('dragging');
+  setPetCursor(CURSOR_GRABBING); // 拖动期间锁定光标，避免与 hover 判定交替
 });
 
 document.addEventListener('mousemove', (e) => {
   if (!isDragging) return;
-  const deltaX = e.screenX - mouseStartX;
-  const deltaY = e.screenY - mouseStartY;
-  if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+  dragPendingDx += e.screenX - mouseStartX;
+  dragPendingDy += e.screenY - mouseStartY;
+  if (Math.abs(dragPendingDx) > 3 || Math.abs(dragPendingDy) > 3) {
     hasMoved = true;
-    mouseStartX = e.screenX;
-    mouseStartY = e.screenY;
-    window.electronAPI.moveWindow(deltaX, deltaY);
+  }
+  mouseStartX = e.screenX;
+  mouseStartY = e.screenY;
+  // 合并到每帧一次窗口移动：早期实现每次 mousemove 都调 moveWindow，
+  // 同一帧内可能触发多次 setPosition（透明窗口每次都是合成层重排），表现为拖动闪动、跟手性差
+  if (!dragRafPending) {
+    dragRafPending = true;
+    requestAnimationFrame(flushDragMove);
   }
 });
+
+function flushDragMove() {
+  dragRafPending = false;
+  if (!isDragging) {
+    dragPendingDx = 0;
+    dragPendingDy = 0;
+    return;
+  }
+  const dx = dragPendingDx;
+  const dy = dragPendingDy;
+  dragPendingDx = 0;
+  dragPendingDy = 0;
+  if (dx === 0 && dy === 0) return;
+  window.electronAPI.moveWindow(dx, dy);
+}
 
 document.addEventListener('mouseup', (e) => {
   if (!isDragging) return;
@@ -171,6 +198,8 @@ document.addEventListener('mouseup', (e) => {
 
   // 拖动结束后单次保存位置
   if (hasMoved) {
+    // 先把最后一帧尚未提交的位移发出去，避免松手瞬间「少走一截」
+    flushDragMove();
     wasSnapped = false; // 拖动过，离开时不弹回贴边
     window.electronAPI.saveWindowPosition();
   }
@@ -443,11 +472,53 @@ window.electronAPI.onDockSnapChanged((side) => {
 
    为避免过渡动画期间频繁触发重算，采用「变化后连续稳定 N 帧才上报」的策略。 */
 const visualBox = document.querySelector('.pet-avatar');
+const petSvg = document.querySelector('.pet-svg');
 let anchorReportTimer = null;
 let anchorStableFrames = 0;
 let anchorLastReport = null;
 
+/**
+ * 读取宠物的**真实视觉框**（相对窗口左上角）。
+ *
+ * 关键：不能用 `.pet-avatar` 的 getBoundingClientRect() —— 它是 90×90 的容器，
+ * 而 SVG 内容在 100×100 viewBox 中只占 x 15..85 / y 10..95，
+ * 缩放 0.9 后实际画面约 63×76.5，容器上下左右都留有空边。
+ * 用容器尺寸会让吸附位置差出 (容器高 - 画面高)/2 ≈ 7px（用户反馈的「差一点距离」）。
+ * 这里用 SVG 的 getBBox()（用户单位）经 getScreenCTM() 转成客户端坐标，
+ * 得到的是真实绘制内容的边界。
+ */
 function readPetAnchor() {
+  if (petSvg && typeof petSvg.getBBox === 'function' && typeof petSvg.getScreenCTM === 'function') {
+    try {
+      const box = petSvg.getBBox();
+      const ctm = petSvg.getScreenCTM();
+      if (box && ctm && box.width > 0 && box.height > 0) {
+        // 用 CTM 把用户单位包围盒的四个角映射到客户端坐标，取外接矩形
+        const xs = [];
+        const ys = [];
+        [[box.x, box.y], [box.x + box.width, box.y],
+          [box.x, box.y + box.height], [box.x + box.width, box.y + box.height]
+        ].forEach(([ux, uy]) => {
+          xs.push(ctm.a * ux + ctm.c * uy + ctm.e);
+          ys.push(ctm.b * ux + ctm.d * uy + ctm.f);
+        });
+        const left = Math.min(...xs);
+        const top = Math.min(...ys);
+        const width = Math.max(...xs) - left;
+        const height = Math.max(...ys) - top;
+        if (width >= 1 && height >= 1) {
+          return {
+            left: Math.round(left),
+            top: Math.round(top),
+            width: Math.round(width),
+            height: Math.round(height)
+          };
+        }
+      }
+    } catch (_) {
+      // getBBox 在元素不可见时可能抛错，回退到容器矩形
+    }
+  }
   const rect = visualBox ? visualBox.getBoundingClientRect() : null;
   if (!rect || !rect.width || !rect.height) return null;
   return {
