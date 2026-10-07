@@ -169,6 +169,9 @@ petBody.addEventListener('mousedown', (e) => {
   dragPendingDy = 0;
   petBody.classList.add('dragging');
   setPetCursor(CURSOR_GRABBING); // 拖动期间锁定光标，避免与 hover 判定交替
+  // 一旦开始手动拖动就清除 Dock 朝向：宠物被拿起后应恢复正立，
+  // 不必等到松手才复位（否则拖动过程中一直是侧躺/倒立姿态）
+  clearDockOrientation();
   // 通知主进程进入"手动拖动"状态：这期间必须完全停止自动吸附，
   // 否则松手前的每一帧都会被拉回吸附位置（表现为吸附后拖不动、会弹回）
   if (window.electronAPI?.setPetDragging) {
@@ -478,9 +481,20 @@ window.electronAPI.onSnapEdgeChanged((edges) => {
   }
 });
 
+/**
+ * 清除 Dock 吸附朝向（旋转类）。
+ * 用户手动拖动、或脱离 Dock 吸附时必须调用：否则 pet-avatar 的旋转会残留，
+ * 宠物会以侧躺/倒立姿态留在桌面上（用户反馈的异常姿态问题）。
+ */
+function clearDockOrientation() {
+  if (petBody) {
+    petBody.classList.remove('dock-top', 'dock-bottom', 'dock-left', 'dock-right');
+  }
+}
+
 // Dock 吸附朝向：仅旋转宠物使其底部朝向 dock 边框（不改变窗口内位置）
 window.electronAPI.onDockSnapChanged((side) => {
-  petBody.classList.remove('dock-top', 'dock-bottom', 'dock-left', 'dock-right');
+  clearDockOrientation();
   if (side) {
     petBody.classList.add('dock-' + side);
   }
@@ -529,19 +543,33 @@ function readPetAnchor() {
           ys.push(ctm.b * ux + ctm.d * uy + ctm.f);
         });
         let left = Math.min(...xs);
-        let top = Math.min(...ys);
-        let width = Math.max(...xs) - left;
-        let height = Math.max(...ys) - top;
+        const top = Math.min(...ys);
+        let right = Math.max(...xs);
+        let bottom = Math.max(...ys);
 
-        // 按地面阴影的纵向半径对四边等量内缩
-        const inset = readShadowInset(ctm);
-        if (inset > 0 && width > inset * 2 && height > inset * 2) {
-          left += inset;
-          top += inset;
-          width -= inset * 2;
-          height -= inset * 2;
+        // 精确扣除地面阴影在各边造成的余量。
+        // 阴影是一个外切椭圆，在**四条边**都超出猫本体，因此必须逐边内缩：
+        // 只收底边（早期做法）会让贴左/右/下时仍有间隙。
+        // 判定"阴影是否造成了这条边"用容差比较，避免误伤其他元素形成的边界。
+        const shadowBox = readShadowClientBox(ctm);
+        if (shadowBox) {
+          const eps = 0.75;
+          if (Math.abs(shadowBox.right - right) <= eps) right = shadowBox.right;
+          if (Math.abs(shadowBox.bottom - bottom) <= eps) bottom = shadowBox.top;
+          // 阴影左右极值贴着盒边 → 猫身实际宽度略小于盒宽，按阴影半宽与盒宽之差收紧
+          const shadowWidth = shadowBox.right - shadowBox.left;
+          const boxWidth = right - left;
+          if (shadowWidth > 0 && shadowWidth < boxWidth) {
+            const sideSlack = (boxWidth - shadowWidth) / 2;
+            if (sideSlack > 0 && sideSlack < boxWidth / 2) {
+              left += sideSlack;
+              right -= sideSlack;
+            }
+          }
         }
 
+        const width = right - left;
+        const height = bottom - top;
         if (width >= 1 && height >= 1) {
           return {
             left: Math.round(left),
@@ -566,22 +594,32 @@ function readPetAnchor() {
 }
 
 /**
- * 地面阴影在客户端坐标下的纵向半径（= 需要从四边内缩的量）。
- * 各向同性，因此旋转 90° 后仍适用。无阴影或不可测量时返回 0。
+ * 地面阴影在客户端坐标下的包围盒。
+ * 阴影为水平椭圆，其包围盒顶边即为"猫本体可见下沿"的近似（爪子只比它高约 2 用户单位）。
+ * 无阴影或不可测量时返回 null。
  */
-function readShadowInset(ctm) {
+function readShadowClientBox(ctm) {
   const shadow = petSvg && petSvg.querySelector ? petSvg.querySelector('.pet-shadow') : null;
-  if (!shadow || typeof shadow.getBBox !== 'function') return 0;
+  if (!shadow || typeof shadow.getBBox !== 'function') return null;
   try {
     const sBox = shadow.getBBox();
-    if (!sBox || !sBox.height) return 0;
-    // ry 通过 CTM 的纵轴缩放映射到客户端像素
-    const scaleY = Math.hypot(ctm.b, ctm.d) || 1;
-    const scaleX = Math.hypot(ctm.a, ctm.c) || 1;
-    // 取两个方向的映射结果中较小者，保证内缩不会超出实际尺寸
-    return Math.min((sBox.height / 2) * scaleY, (sBox.width / 2) * scaleX);
+    if (!sBox || !sBox.width || !sBox.height) return null;
+    const xs = [];
+    const ys = [];
+    [[sBox.x, sBox.y], [sBox.x + sBox.width, sBox.y],
+      [sBox.x, sBox.y + sBox.height], [sBox.x + sBox.width, sBox.y + sBox.height]
+    ].forEach(([ux, uy]) => {
+      xs.push(ctm.a * ux + ctm.c * uy + ctm.e);
+      ys.push(ctm.b * ux + ctm.d * uy + ctm.f);
+    });
+    return {
+      left: Math.min(...xs),
+      top: Math.min(...ys),
+      right: Math.max(...xs),
+      bottom: Math.max(...ys)
+    };
   } catch (_) {
-    return 0;
+    return null;
   }
 }
 
@@ -591,11 +629,53 @@ function isSameAnchor(a, b) {
     a.width === b.width && a.height === b.height;
 }
 
+/**
+ * 调试可视化：把「吸附所用的锚点框」画出来（宠物画面内的红色矩形）。
+ * 用途：吸附贴合出现肉眼可见的偏差时，难以判断是"度量错误"还是"视觉模型错误"。
+ * 打开后截图即可确认锚点框是否正好包住猫本体，从而定位问题。
+ * 开启方式：HTML 根元素加 `debug-anchor` 类，或 localStorage 置 dsh_debug_anchor=1。
+ */
+const debugAnchorEnabled = (() => {
+  try {
+    if (document.documentElement.classList.contains('debug-anchor')) return true;
+    return localStorage.getItem('dsh_debug_anchor') === '1';
+  } catch (_) {
+    return false;
+  }
+})();
+
+let debugAnchorBox = null;
+
+function renderDebugAnchor(anchor) {
+  if (!debugAnchorEnabled) return;
+  if (!debugAnchorBox) {
+    debugAnchorBox = document.createElement('div');
+    debugAnchorBox.style.cssText = [
+      'position:absolute',
+      'border:1px solid rgba(255,0,0,0.9)',
+      'background:rgba(255,0,0,0.08)',
+      'pointer-events:none',
+      'z-index:9999'
+    ].join(';');
+    document.body.appendChild(debugAnchorBox);
+  }
+  if (!anchor) {
+    debugAnchorBox.style.display = 'none';
+    return;
+  }
+  debugAnchorBox.style.display = 'block';
+  debugAnchorBox.style.left = anchor.left + 'px';
+  debugAnchorBox.style.top = anchor.top + 'px';
+  debugAnchorBox.style.width = anchor.width + 'px';
+  debugAnchorBox.style.height = anchor.height + 'px';
+}
+
 function startAnchorWatch() {
   let last = readPetAnchor();
   anchorStableFrames = 0;
   const tick = () => {
     const cur = readPetAnchor();
+    renderDebugAnchor(cur);
     if (cur) {
       if (isSameAnchor(cur, last)) {
         anchorStableFrames++;

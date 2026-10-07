@@ -130,22 +130,21 @@ ok('视觉框用 SVG getBBox + getScreenCTM 测量真实画面（而非容器 90
   // 必须仍保留回退，避免 getBBox 抛错时完全没有锚点
   assert.ok(/getBoundingClientRect\(\)/.test(body), '缺少回退路径');
 });
-ok('地面阴影对四边等量内缩（左右下上也消除间隙）', () => {
+ok('地面阴影余量逐边扣除（左右下上也消除间隙）', () => {
   const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
   const start = floatSrc.indexOf('function readPetAnchor(');
   const end = floatSrc.indexOf('\n}\n', start);
   const body = floatSrc.slice(start, end);
-  assert.ok(/readShadowInset\(/.test(body), '未按阴影尺寸内缩');
-  // 必须是四边都缩，而不是只收底边（只收底边会导致左/右/下有间隙）
-  ['left += inset', 'top += inset', 'width -= inset * 2', 'height -= inset * 2']
-    .forEach((frag) => {
-      assert.ok(body.includes(frag), '缺少四边内缩语句: ' + frag);
-    });
-  const insetStart = floatSrc.indexOf('function readShadowInset(');
-  const insetEnd = floatSrc.indexOf('\n}\n', insetStart);
-  const insetBody = floatSrc.slice(insetStart, insetEnd);
-  assert.ok(/\.pet-shadow/.test(insetBody), '未定位阴影元素');
-  assert.ok(/Math\.min\(/.test(insetBody), '缺少「取较小映射量」的保护，可能内缩过度');
+  assert.ok(/readShadowClientBox\(/.test(body), '未按阴影实测包围盒扣除余量');
+  // 必须处理左右与底部三条被阴影"撑大"的边，而不是只收底边
+  assert.ok(/shadowBox\.right/.test(body) && /shadowBox\.bottom/.test(body),
+    '未逐边扣除阴影造成的余量');
+  assert.ok(/sideSlack/.test(body), '未按阴影半宽收紧左右边（椭圆极值贴着盒边）');
+  const boxStart = floatSrc.indexOf('function readShadowClientBox(');
+  const boxEnd = floatSrc.indexOf('\n}\n', boxStart);
+  const boxBody = floatSrc.slice(boxStart, boxEnd);
+  assert.ok(/\.pet-shadow/.test(boxBody), '未定位阴影元素');
+  assert.ok(/left:|right:|top:|bottom:/.test(boxBody), '阴影包围盒未返回四边');
 });
 
 console.log('\n[5] 拖动窗口移动合并到每帧一次（修复拖动闪动）');
@@ -191,6 +190,32 @@ ok('浮窗在 mousedown/mouseup 通知拖动状态', () => {
   assert.ok(/setPetDragging\(true\)/.test(floatSrc), '未在开始拖动时通知主进程');
   assert.ok(/setPetDragging\(false\)/.test(floatSrc), '未在结束拖动时通知主进程');
   assert.ok(/addEventListener\('blur'/.test(floatSrc), '缺少失焦兜底，拖动抑制可能永久生效');
+});
+
+console.log('\n[7] 脱离吸附时必须复位宠物朝向（修复姿态卡住）');
+ok('浮窗提供 clearDockOrientation 并在开始拖动时调用', () => {
+  const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  assert.ok(/function clearDockOrientation\(/.test(floatSrc), '缺少 clearDockOrientation');
+  const dragStart = floatSrc.indexOf("petBody.addEventListener('mousedown'");
+  const dragEnd = floatSrc.indexOf('});', dragStart);
+  const body = floatSrc.slice(dragStart, dragEnd);
+  assert.ok(/clearDockOrientation\(\)/.test(body),
+    '开始拖动时未清除 Dock 朝向 —— 宠物会以侧躺/倒立姿态被拖走');
+});
+ok('onDockSnapChanged 先清除再设置朝向', () => {
+  const floatSrc = fs.readFileSync(path.join(root, 'renderer', 'scripts', 'float.js'), 'utf8');
+  const start = floatSrc.indexOf('onDockSnapChanged');
+  const end = floatSrc.indexOf('});', start);
+  const body = floatSrc.slice(start, end);
+  assert.ok(/clearDockOrientation\(\)/.test(body), '未先清除旧朝向');
+  assert.ok(/if \(side\)/.test(body), '未处理 side 为空（脱离吸附）的情况');
+});
+ok('脱离吸附时主进程主动下发 null 朝向', () => {
+  const start = windowSrc.indexOf("ipcMain.handle('save-window-position'");
+  const end = windowSrc.indexOf('\n  });', start);
+  const body = windowSrc.slice(start, end);
+  assert.ok(/hadRelation/.test(body) && /dock-snap-changed', null/.test(body),
+    '松手脱离吸附时未下发 null，朝向会残留');
 });
 
 console.log('\n通过 ' + pass + ' 项断言' + (process.exitCode ? '，存在失败' : '，全部通过'));
