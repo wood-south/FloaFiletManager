@@ -194,6 +194,55 @@ function register({ loadConfig, saveConfig }) {
     return config.preferredPath || config.savePath;
   });
 
+  /* ========== 能力层配置（按能力 id 隔离命名空间） ==========
+     每个可插拔能力（renderer/capabilities/<id>/）把自己的开关与偏好
+     存在 config.capabilities[id] 下，避免继续往扁平结构里塞字段。
+     保留 config.capabilities 整块，阶段 6 的 v1→v2 命名空间化迁移
+     会把它一并搬到正式结构里。 */
+
+  const SAFE_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+  const SAFE_ID = /^[a-z0-9-]{1,48}$/;
+
+  function readCapabilityStore() {
+    const config = loadConfig();
+    if (!config.capabilities || typeof config.capabilities !== 'object') {
+      config.capabilities = {};
+    }
+    return config;
+  }
+
+  ipcMain.handle('capability-get', (event, { capabilityId, key } = {}) => {
+    if (!SAFE_ID.test(String(capabilityId || ''))) return undefined;
+    if (!SAFE_KEY.test(String(key || ''))) return undefined;
+    const config = loadConfig();
+    const store = config.capabilities && config.capabilities[capabilityId];
+    return store ? store[key] : undefined;
+  });
+
+  ipcMain.handle('capability-set', (event, { capabilityId, key, value } = {}) => {
+    // 只接受 JSON 基本类型，避免把任意对象写进配置
+    const isPrimitive = value === null || ['boolean', 'number', 'string'].includes(typeof value);
+    if (!SAFE_ID.test(String(capabilityId || ''))) {
+      return { success: false, error: '非法的能力 id' };
+    }
+    if (!SAFE_KEY.test(String(key || ''))) {
+      return { success: false, error: '非法的配置键' };
+    }
+    if (!isPrimitive) {
+      return { success: false, error: '不支持的值类型' };
+    }
+    try {
+      const config = readCapabilityStore();
+      if (!config.capabilities[capabilityId]) config.capabilities[capabilityId] = {};
+      config.capabilities[capabilityId][key] = value;
+      saveConfig(config);
+      return { success: true };
+    } catch (e) {
+      console.error('保存能力配置失败:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
   ipcMain.handle('set-preferred-path', async (event, newPath) => {
     try {
       if (!newPath) return { success: false, error: '路径不能为空' };

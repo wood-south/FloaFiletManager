@@ -186,15 +186,47 @@ search 与 maintain 统一走 `decide()` 消除公式分叉。
 
 ### 阶段 1：抽出第一个能力 `quick-upload`（最小验证）
 
-| 项 | 内容 |
+| 项 | 内容 | 状态 |
+| --- | --- | --- |
+| 1.1 | 新建 `renderer/scripts/capabilities.js`（注册表）+ `renderer/capabilities/quick-upload/{manifest.js,index.js,style.css}` | ✅ |
+| 1.2 | 迁移 `float.js` 的拖放上传/回收站（原 dragenter/dragover/dragleave/drop 四个 document 监听）与菜单「回收站模式」切换 | ✅ |
+| 1.3 | 新建能力注册表：`window.deskPetRegistry`（`attach` / `use` / `on` / `emit` / `manifests`）+ `window.deskPet` 壳层 API | ✅ |
+| 1.4 | `recycleMode` 裸变量改为 `pet.storage`（`config.capabilities['quick-upload'].recycleMode`）持久化 | ✅ |
+
+**边界划分（本阶段确立的契约）**
+
+| 关注点 | 归属 |
 | --- | --- |
-| 1.1 | 新建 `renderer/capabilities/quick-upload/{manifest.js,index.js,style.css}` |
-| 1.2 | 迁移 `float.js:304-437`（拖放上传/回收站）、`float.js:239-252`（菜单按钮切换） |
-| 1.3 | 新建 `renderer/shared/registry.js`：`window.deskPet.use(cap)` + 事件总线 + manifest 校验 |
-| 1.4 | `recycleMode` 裸变量改为 `persistKey: 'capabilities.quick-upload.recycleMode'` 持久化 |
+| 拖放事件拦截、落点提示显示/隐藏、路径收集 | **壳层**（`capabilities.js` 的 `bindDropCollection`） |
+| 拿到路径后做什么（上传 / 删除回收站 / 重名询问） | **能力**（`capabilities/quick-upload/index.js`） |
+| 落点提示的文案与图标 | 能力通过 `manifest.dropHint` 提供，壳层按当前模式渲染 |
+| 菜单开合、穿透仲裁、窗口扩容 | **壳层**（阶段 2 再计数式化） |
+
+**新增 IPC**：`capability-get` / `capability-set`（`src/main/ipc/config.js`，落盘在 `config.capabilities[<id>]`，
+带 id/键名白名单与「只接受 JSON 基本类型」校验）。
 
 **验收标准（本阶段的核心价值）**：**临时移除 `capabilities/quick-upload/` 目录后，桌宠仍能正常启动、拖动、贴边、开关菜单、退出。**
-**检测**：`grep -rn "uploadFile\|deleteFile" renderer/scripts/` 应为空（业务只在 capability 内）。
+→ 已由 `test/capabilities.test.js` 第 [11] 组守住：未注册任何能力时 `manifests()` 为空数组、
+`getDropHint()` 返回 null、`pet:drop` 无人处理也不抛错；页面侧靠 `float.html` 的 `onerror` 兜底。
+
+**检测**：
+- `float.js` 中不再出现 `uploadFile` / `deleteFile` / `getUploadDest`（业务只在能力目录内）；
+  ⚠️ 注意 ROADMAP 原稿此处写的是 `grep -rn "uploadFile|deleteFile" renderer/scripts/`，
+  该范围过宽 —— `file-manager.js` 是**文件管理窗口**，它本来就该有自己的上传/删除调用。
+  正确范围是 `renderer/scripts/float.js`（桌宠壳层）。
+- `float.js` 725 → 587 行；`capabilities.js` 252 行 + 能力 3 个文件共 170 行。
+- `npm test` 由 6 个脚本增至 **7 个**，新增 `test/capabilities.test.js` **31 项断言**。
+- `npm run lint` 全绿。
+
+**过程中发现并修掉的两个真实缺陷（都在新增的能力层里，测试当场抓出）**：
+
+1. `capabilities.js` 注入的 `ctx.pet` 原先指向原始 API 对象，能力里 `pet.root` 为 `undefined`
+   → 菜单按钮高亮静默失效。改为 `ctx.pet = ctx`（自身引用）。
+2. `float.js` 的 `deskPet.storage.get/set` 原先按 `(key[, value])` 两参实现，而注册表按
+   `(capabilityId, key[, value])` 调用 → 能力 id 落进 key 槽、值被丢弃，持久化会**静默写错**。
+   已统一为三参壳层签名，并在测试里逐参断言。
+
+**提交**：`refactor: 阶段1 抽出 quick-upload 能力并引入能力注册表`
 
 ---
 
@@ -321,7 +353,7 @@ search 与 maintain 统一走 `decide()` 消除公式分叉。
 ```
 ✅ 阶段 −1:  fix: 阶段-1 止损（文件管理器拖动、图标缓存位置、IPC 路径校验）      [5f62f03]
 ✅ 阶段 −1.5: fix: 阶段-1.5 修复文件列表陈旧与 Dock 失效图标无反馈              [38bc848]
-✅ 阶段  0:  refactor: 阶段0 抽取共用 UI 原语（模态框/Toast）
+✅ 阶段  0:  refactor: 阶段0 抽取共用 UI 原语（模态框/Toast）                   [6eda6a9]
    阶段  1:  refactor: 抽出 quick-upload 能力并引入能力注册表
    阶段  2:  refactor: 桌宠壳层拆分与穿透事件仲裁
    阶段  3:  feat: 桌宠动画状态机与皮肤包格式

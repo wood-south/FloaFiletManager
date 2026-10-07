@@ -3,6 +3,7 @@
 module.exports = [
   { name: 'IPC 安全防线 guard.js', file: 'guard.test.js' },
   { name: '共用 UI 原语 primitives.js', file: 'primitives.test.js' },
+  { name: '能力层契约 capabilities.js + quick-upload', file: 'capabilities.test.js' },
   { name: '浮窗吸附几何 snap.js', file: 'snap.test.js' },
   { name: '吸附与 Dock 移动契约 window.js', file: 'snap-contract.test.js' },
   { name: 'Dock 菜单扩展几何契约 dock.js', file: 'dock-geometry.test.js' },

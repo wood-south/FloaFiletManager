@@ -18,7 +18,6 @@ let quitOpen = false;
 let clickTimer = null;
 let wasSnapped = false;
 let snapLock = false;
-let recycleMode = false;
 let modalActive = false; // 模态框打开时禁止点击穿透
 // 拖动的窗口移动合并到每帧一次（避免同一帧多次 setPosition 造成闪动）
 let dragPendingDx = 0;
@@ -271,20 +270,6 @@ menuRing.addEventListener('click', async (e) => {
       }
       showToast(dockVisible ? 'Dock 已开启' : 'Dock 已关闭', 1500);
       break;
-    case 'folder':
-      closeMenu();
-      recycleMode = !recycleMode;
-      const folderBtn = menuRing.querySelector('[data-action="folder"]');
-      if (folderBtn) {
-        folderBtn.classList.toggle('recycle-active', recycleMode);
-      }
-      showToast(recycleMode ? '回收站模式已开启' : '回收站模式已关闭', 1500);
-      // 更新拖放提示
-      const dropOverlayText = dropOverlay.querySelector('span');
-      if (dropOverlayText) {
-        dropOverlayText.textContent = recycleMode ? '释放删除到回收站' : '释放上传';
-      }
-      break;
     case 'computer':
       closeMenu();
       window.electronAPI.openThisComputer();
@@ -294,6 +279,12 @@ menuRing.addEventListener('click', async (e) => {
       const newState = await window.electronAPI.toggleAlwaysOnTop();
       btn.classList.toggle('active', newState);
       showToast(newState ? '已开启置顶' : '已关闭置顶', 1500);
+      break;
+    default:
+      // 能力注册的自定义菜单按钮（如 quick-upload 的「回收站模式」）：
+      // 菜单开合属壳层状态，具体切换与提示由能力自己处理
+      closeMenu();
+      deskPet.emit('menubtn', action);
       break;
   }
 });
@@ -336,140 +327,73 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// 拖放上传/删除
-document.addEventListener('dragenter', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  dropOverlay.classList.add('drag-over');
-  const dropOverlayText = dropOverlay.querySelector('span');
-  const dropOverlaySvg = dropOverlay.querySelector('svg');
-  if (dropOverlayText) {
-    dropOverlayText.textContent = recycleMode ? '释放删除到回收站' : '释放上传';
+/* ========== 能力层（可插拔业务） ==========
+   拖放上传 / 回收站已抽成 renderer/capabilities/quick-upload 能力。
+   壳层在这里：
+   1) 把桌宠 API 与「落点提示」的渲染方式交给能力注册表
+   2) 转发拖放收集（拦截、显示提示、收集路径都在 capabilities.js 内完成）
+   3) 通过 capability:mode 事件获知提示应显示「上传」还是「回收站」形态
+
+   本文件不再直接调用 uploadFile / deleteFile —— 业务只存在于能力目录内。
+   移除 capabilities/quick-upload/ 后，桌宠的拖动/贴边/吸附/菜单/退出仍然可用。 */
+let dropHintMode = 'upload'; // 'upload' | 'recycle'，由能力通过事件同步
+
+const deskPet = {
+  root: document.body,
+  toast: (message, duration) => showToast(message, duration),
+  modal: (config) => showModal(config),
+  on: (eventName, handler) => window.deskPetRegistry.on(eventName, handler),
+  emit: (eventName, payload) => window.deskPetRegistry.emit(eventName, payload),
+  storage: {
+    // 壳层存储 API 的签名是 (capabilityId, key[, value])：
+    // 注册表按能力隔离命名空间，能力侧只写自己的 key。
+    // 早期写成 (key, value)，会让能力 id 落进 key 槽、值被丢弃（静默写错）。
+    get: (capabilityId, key) => window.electronAPI.capabilityGet(capabilityId, key),
+    set: (capabilityId, key, value) => window.electronAPI.capabilitySet(capabilityId, key, value)
+  },
+  dropOverlay,
+  /**
+   * 当前落点提示：取第一个提供 dropHint 的能力的对应形态。
+   * 没有任何能力注册 dropHint 时返回 null，壳层便不显示业务提示。
+   */
+  getDropHint: () => {
+    const caps = window.deskPetRegistry.manifests();
+    for (const m of caps) {
+      if (m.dropHint && m.dropHint[dropHintMode]) return m.dropHint[dropHintMode];
+    }
+    return null;
+  },
+  /** 能力切换模式后主动刷新提示（拖放进行中才有视觉变化） */
+  refreshDropHint: () => {
+    const overlay = dropOverlay;
+    if (!overlay || !overlay.classList.contains('drag-over')) return;
+    const hint = deskPet.getDropHint();
+    if (!hint) return;
+    const textEl = overlay.querySelector('span');
+    if (textEl && hint.text) textEl.textContent = hint.text;
+    const svgEl = overlay.querySelector('svg');
+    if (svgEl && hint.icon) svgEl.innerHTML = hint.icon;
+    overlay.classList.toggle('recycle-mode', hint.mode === 'recycle');
   }
-  if (dropOverlaySvg) {
-    if (recycleMode) {
-      dropOverlaySvg.innerHTML = `
-        <polyline points="3 6 5 6 21 6"></polyline>
-        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-        <line x1="10" y1="11" x2="10" y2="17"></line>
-        <line x1="14" y1="11" x2="14" y2="17"></line>
-      `;
-    } else {
-      dropOverlaySvg.innerHTML = `
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="17 8 12 3 7 8"></polyline>
-        <line x1="12" y1="3" x2="12" y2="15"></line>
-      `;
-    }
-  }
-  if (recycleMode) {
-    dropOverlay.classList.add('recycle-mode');
-  } else {
-    dropOverlay.classList.remove('recycle-mode');
-  }
-}, true);
+};
 
-document.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  dropOverlay.classList.add('drag-over');
-}, true);
+window.deskPetRegistry.attach({
+  root: deskPet.root,
+  toast: deskPet.toast,
+  modal: deskPet.modal,
+  storage: deskPet.storage,
+  dropOverlay,
+  getDropHint: () => deskPet.getDropHint()
+});
 
-document.addEventListener('dragleave', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (e.clientX <= 0 || e.clientY <= 0 ||
-      e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
-    dropOverlay.classList.remove('drag-over');
-    dropOverlay.classList.remove('recycle-mode');
-  }
-}, true);
+// 能力切换工作模式（如进入回收站模式）→ 同步落点提示形态
+window.deskPetRegistry.on('capability:mode', (payload) => {
+  if (!payload || payload.mode === undefined) return;
+  dropHintMode = payload.mode === 'recycle' ? 'recycle' : 'upload';
+  deskPet.refreshDropHint();
+});
 
-document.addEventListener('drop', async (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  dropOverlay.classList.remove('drag-over');
-  dropOverlay.classList.remove('recycle-mode');
-
-  const types = Array.from(e.dataTransfer.types);
-
-  // 收集文件路径：支持系统拖放(Files)和文件管理页拖放(text/plain)
-  const filePaths = [];
-  if (types.includes('Files') || types.includes('application/x-moz-file')) {
-    const files = e.dataTransfer.files;
-    for (const file of files) {
-      if (file.path) filePaths.push(file.path);
-    }
-  }
-  if (types.includes('text/plain')) {
-    const text = e.dataTransfer.getData('text/plain');
-    if (text) {
-      text.split('\n').filter(p => p.trim()).forEach(p => filePaths.push(p.trim()));
-    }
-  }
-
-  if (filePaths.length === 0) return;
-
-  if (recycleMode) {
-    // 回收站模式：删除文件
-    let successCount = 0;
-    for (const filePath of filePaths) {
-      const result = await window.electronAPI.deleteFile(filePath);
-      if (result.success) successCount++;
-    }
-    if (successCount > 0) {
-      showToast(`已删除 ${successCount} 个文件到回收站`);
-    } else {
-      showToast('删除失败');
-    }
-  } else {
-    // 普通模式：上传文件
-    // 文件管理器打开则上传到当前路径，否则上传到首选路径
-    let destDir = null;
-    if (window.electronAPI.getUploadDest) {
-      destDir = await window.electronAPI.getUploadDest();
-    }
-    let successCount = 0;
-    for (const filePath of filePaths) {
-      const fileName = filePath.split(/[\\/]/).pop();
-      const result = await window.electronAPI.uploadFile({
-        sourcePath: filePath,
-        fileName: fileName,
-        destDir: destDir
-      });
-
-      if (result.duplicate) {
-        const choice = await showModal({
-          type: 'question',
-          title: '文件已存在',
-          message: `"${fileName}" 已存在，是否覆盖？`,
-          buttons: [
-            { text: '覆盖', style: 'danger' },
-            { text: '取消', style: 'secondary' }
-          ]
-        });
-
-        if (choice === 0) {
-          const overwriteResult = await window.electronAPI.uploadFile({
-            sourcePath: filePath,
-            fileName: fileName,
-            overwrite: true,
-            destDir: destDir
-          });
-          if (overwriteResult.success) successCount++;
-        }
-      } else if (result.success) {
-        successCount++;
-      }
-    }
-
-    if (successCount > 0) {
-      showToast(`成功上传 ${successCount} 个文件`);
-    } else {
-      showToast('上传取消');
-    }
-  }
-}, true);
+window.deskPet = deskPet;
 
 // 贴边方向变化时移动桌宠位置
 window.electronAPI.onSnapEdgeChanged((edges) => {

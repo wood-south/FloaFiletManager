@@ -1,0 +1,21 @@
+/* 能力：拖放上传 / 回收站（quick-upload）专属样式
+   ------------------------------------------------------------
+   原先「回收站模式」的按钮高亮与脉冲动画写在 float.css 里。
+   阶段 1 把该能力抽成可插拔模块后，这部分视觉一并归属本文件：
+   移除 capabilities/quick-upload/ 目录时，红色高亮与动画随之消失，
+   桌宠壳层不会留下无主的样式。
+
+   注意：`.drop-overlay.recycle-mode` 仍留在 float.css——落点提示层
+   由壳层（capabilities.js 的 bindDropCollection）渲染，属于窗口级交互。 */
+
+.menu-btn.recycle-active {
+  background: #ef4444;
+  animation: recycleGlow 1.5s ease-in-out infinite;
+}
+.menu-btn.recycle-active svg { color: white; }
+.menu-btn.recycle-active:hover { background: #dc2626; }
+
+@keyframes recycleGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}

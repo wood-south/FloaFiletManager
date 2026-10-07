@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setPreferredPath: (path) => ipcRenderer.invoke('set-preferred-path', path),
   syncCurrentPath: (path) => ipcRenderer.invoke('sync-current-path', path),
   getUploadDest: () => ipcRenderer.invoke('get-upload-dest'),
+  // 能力层（可插拔业务）自己的配置命名空间
+  capabilityGet: (capabilityId, key) => ipcRenderer.invoke('capability-get', { capabilityId, key }),
+  capabilitySet: (capabilityId, key, value) => ipcRenderer.invoke('capability-set', { capabilityId, key, value }),
   startDrag: (filePath, iconDataUrl) => ipcRenderer.invoke('start-drag', { filePath, iconDataUrl }),
   systemAction: (action) => ipcRenderer.invoke('system-action', action),
   toggleTaskbar: (hide) => ipcRenderer.invoke('toggle-taskbar', hide),

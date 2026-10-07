@@ -7,6 +7,9 @@
   <title>浮窗</title>
   <link rel="stylesheet" href="styles/primitives.css">
   <link rel="stylesheet" href="styles/float.css">
+  <!-- 能力的样式由能力自己提供：移除 capabilities/quick-upload/ 后
+       该按钮的红色高亮与动画随之消失，壳层不会留下无主样式 -->
+  <link rel="stylesheet" href="capabilities/quick-upload/style.css">
 </head>
 <body>
   <div class="pet-body" id="petBody">
@@ -52,7 +55,7 @@
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
       </div>
-      <div class="menu-btn" data-action="folder" title="文件管理">
+      <div class="menu-btn" data-action="recycle" title="回收站模式">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="3 6 5 6 21 6"></polyline>
           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -107,6 +110,12 @@
   </div>
 
   <script src="scripts/primitives.js"></script>
+  <script src="scripts/capabilities.js"></script>
   <script src="scripts/float.js"></script>
+  <!-- 可插拔能力：missing 时 onerror 保证桌宠壳层照常运行
+       （阶段 1 验收标准：删掉能力目录后桌宠仍能拖动/贴边/开关菜单/退出） -->
+  <script src="capabilities/quick-upload/manifest.js"></script>
+  <script src="capabilities/quick-upload/index.js"
+          onerror="console.warn('[float] quick-upload 能力未加载，桌宠以无业务模式运行')"></script>
 </body>
 </html>
